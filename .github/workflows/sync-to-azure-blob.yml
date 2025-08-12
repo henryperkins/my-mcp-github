@@ -1,0 +1,86 @@
+name: Sync Repository to Azure Blob Storage
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  sync-to-blob:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Get full history for better indexing
+    
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Sync repository to blob storage
+      uses: azure/CLI@v2
+      with:
+        azcliversion: latest
+        inlineScript: |
+          # Set variables
+          STORAGE_ACCOUNT="${{ secrets.STORAGE_ACCOUNT_NAME }}"
+          CONTAINER_NAME="${{ secrets.CONTAINER_NAME }}"
+          
+          # Create container if it doesn't exist
+          az storage container create \
+            --name $CONTAINER_NAME \
+            --account-name $STORAGE_ACCOUNT \
+            --auth-mode login \
+            --fail-on-exist false
+          
+          # Upload all repository files (excluding .git)
+          az storage blob upload-batch \
+            --account-name $STORAGE_ACCOUNT \
+            --destination $CONTAINER_NAME \
+            --source . \
+            --pattern "*" \
+            --overwrite \
+            --auth-mode login \
+            --exclude-path ".git;node_modules;dist;build;.github"
+          
+          # Upload metadata file with sync info
+          echo "{\"repo\":\"${{ github.repository }}\",\"branch\":\"${{ github.ref_name }}\",\"commit\":\"${{ github.sha }}\",\"synced\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > sync-metadata.json
+          
+          az storage blob upload \
+            --account-name $STORAGE_ACCOUNT \
+            --container-name $CONTAINER_NAME \
+            --name "_metadata/sync-info.json" \
+            --file sync-metadata.json \
+            --auth-mode login \
+            --overwrite
+    
+    - name: Trigger Azure Search Indexer (Optional)
+      continue-on-error: true  # Don't fail if indexer doesn't exist yet
+      uses: azure/CLI@v2
+      with:
+        azcliversion: latest
+        inlineScript: |
+          # Trigger indexer if configured
+          SEARCH_SERVICE="${{ secrets.AZURE_SEARCH_SERVICE }}"
+          INDEXER_NAME="${{ secrets.INDEXER_NAME }}"
+          API_KEY="${{ secrets.AZURE_SEARCH_API_KEY }}"
+          
+          if [ ! -z "$SEARCH_SERVICE" ] && [ ! -z "$INDEXER_NAME" ] && [ ! -z "$API_KEY" ]; then
+            curl -X POST \
+              "https://${SEARCH_SERVICE}.search.windows.net/indexers/${INDEXER_NAME}/run?api-version=2025-08-01-preview" \
+              -H "Content-Type: application/json" \
+              -H "api-key: ${API_KEY}"
+            echo "Indexer triggered successfully"
+          else
+            echo "Indexer configuration not found, skipping"
+          fi
