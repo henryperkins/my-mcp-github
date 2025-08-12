@@ -4,7 +4,7 @@ A powerful MCP (Model Context Protocol) server for managing Azure AI Search serv
 
 ## Features
 
-- 🔍 **Full Azure Search Management** - Manage indexes, documents, data sources, indexers, and skillsets
+- 🔍 **Full Azure Search Management** - Create, update, and manage indexes, documents, synonym maps, data sources, indexers, and skillsets
 - 🤖 **Intelligent Summarization** - Large responses (>20KB) are automatically summarized using GPT-4o-mini
 - 📄 **Smart Pagination** - Automatic pagination for large result sets (max 50 items per search)
 - 🚀 **Cloudflare Workers** - Fast, globally distributed edge deployment
@@ -110,9 +110,13 @@ npx @modelcontextprotocol/inspector@latest
 ## Available Tools
 
 ### Index Management
-- `listIndexes` - List all search indexes
-- `getIndex` - Get index definition and schema
+- `listIndexes` - List all search indexes with metadata
+  - Optional `includeStats`: Add document count and storage size
+  - Optional `verbose`: Return full index definitions
+- `getIndex` - Get full index definition and schema
 - `getIndexStats` - View document count and storage usage
+- `createIndex` - Create a new search index
+- `createOrUpdateIndex` - Create or update index definition
 - `deleteIndex` - Delete an index and all its documents
 
 ### Document Operations
@@ -122,6 +126,16 @@ npx @modelcontextprotocol/inspector@latest
   - Full OData filter syntax
 - `getDocument` - Retrieve document by key
 - `countDocuments` - Get total document count
+- `uploadDocuments` - Upload new documents to an index
+- `mergeDocuments` - Update existing documents
+- `mergeOrUploadDocuments` - Update existing or create new documents
+- `deleteDocuments` - Delete documents by key
+
+### Synonym Maps
+- `listSynonymMaps` - List all synonym maps
+- `getSynonymMap` - Get synonym map definition
+- `createOrUpdateSynonymMap` - Create or update synonym map
+- `deleteSynonymMap` - Delete a synonym map
 
 ### Indexer Management
 - `listIndexers` - List all indexers
@@ -215,7 +229,7 @@ az role assignment create \
 
 - **Runtime**: Cloudflare Workers with Durable Objects
 - **Protocol**: MCP (Model Context Protocol)
-- **APIs**: Azure Search REST API v2024-07-01, Azure OpenAI v2024-08-01-preview
+- **APIs**: Azure Search REST API v2025-08-01-preview, Azure OpenAI v2024-08-01-preview
 - **Language**: TypeScript
 - **Files**:
   - `src/index.ts` - Main MCP server

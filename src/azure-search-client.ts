@@ -2,7 +2,7 @@
 export class AzureSearchClient {
   private endpoint: string;
   private apiKey: string;
-  private apiVersion = "2024-07-01";
+  private apiVersion = "2025-08-01-preview";
 
   constructor(endpoint: string, apiKey: string) {
     this.endpoint = endpoint.replace(/\/$/, ''); // Remove trailing slash
@@ -156,5 +156,84 @@ export class AzureSearchClient {
     return this.request(`/skillsets/${name}`, {
       method: 'DELETE',
     });
+  }
+
+  // Synonym Map operations
+  async listSynonymMaps() {
+    const result = await this.request('/synonymmaps');
+    return result.value || [];
+  }
+
+  async getSynonymMap(name: string) {
+    return this.request(`/synonymmaps/${name}`);
+  }
+
+  async createOrUpdateSynonymMap(name: string, synonymMapDefinition: any) {
+    return this.request(`/synonymmaps/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(synonymMapDefinition),
+    });
+  }
+
+  async deleteSynonymMap(name: string) {
+    return this.request(`/synonymmaps/${name}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Enhanced Index operations
+  async createIndex(indexDefinition: any) {
+    return this.request('/indexes', {
+      method: 'POST',
+      body: JSON.stringify(indexDefinition),
+    });
+  }
+
+  // Enhanced Document operations
+  async indexDocuments(indexName: string, batch: any) {
+    return this.request(`/indexes/${indexName}/docs/index`, {
+      method: 'POST',
+      body: JSON.stringify(batch),
+    });
+  }
+
+  async uploadDocuments(indexName: string, documents: any[]) {
+    const batch = {
+      value: documents.map(doc => ({
+        '@search.action': 'upload',
+        ...doc
+      }))
+    };
+    return this.indexDocuments(indexName, batch);
+  }
+
+  async mergeDocuments(indexName: string, documents: any[]) {
+    const batch = {
+      value: documents.map(doc => ({
+        '@search.action': 'merge',
+        ...doc
+      }))
+    };
+    return this.indexDocuments(indexName, batch);
+  }
+
+  async mergeOrUploadDocuments(indexName: string, documents: any[]) {
+    const batch = {
+      value: documents.map(doc => ({
+        '@search.action': 'mergeOrUpload',
+        ...doc
+      }))
+    };
+    return this.indexDocuments(indexName, batch);
+  }
+
+  async deleteDocuments(indexName: string, keys: any[]) {
+    const batch = {
+      value: keys.map(key => ({
+        '@search.action': 'delete',
+        ...key
+      }))
+    };
+    return this.indexDocuments(indexName, batch);
   }
 }

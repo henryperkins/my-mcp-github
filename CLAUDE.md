@@ -21,7 +21,7 @@ This is an Azure AI Search MCP (Model Context Protocol) server deployed on Cloud
 - **Durable Objects**: Requires Durable Object binding for MCP Agent state management
 - **Response Format**: All tools return text content type with JSON stringified data
 - **API Versions**: 
-  - Azure Search: 2024-07-01
+  - Azure Search: 2025-08-01-preview
   - Azure OpenAI: 2024-08-01-preview
 - **Intelligent Response Handling**:
   - **Pagination**: Large result sets are automatically paginated (max 50 items for search, configurable history limits)
@@ -85,15 +85,38 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 ## Available Tools
 
 ### Index Management
-- `listIndexes` - List all index names
-- `getIndex` - Fetch full index definition
+- `listIndexes` - List all indexes with metadata
+  - Optional `includeStats`: Add document count and storage size
+  - Optional `verbose`: Return full index definitions
+- `getIndex` - Fetch full index definition (fields, analyzers, etc.)
 - `getIndexStats` - Get document count and storage usage
+- `createIndex` - Create a new search index with enhanced features
+  - Templates: `documentSearch`, `productCatalog`, `hybridSearch`, `knowledgeBase`
+  - Clone existing index with `cloneFrom`
+  - Auto language analyzer selection
+  - Built-in validation
+  - Vector dimensions configuration
+- `createOrUpdateIndex` - Smart index updates
+  - Add fields without full redefinition
+  - Update semantic search configuration
+  - Merge with existing definition
+  - Validation to prevent breaking changes
 - `deleteIndex` - Delete index and its documents
 
 ### Document Operations
 - `searchDocuments` - Query documents with keyword search, filters, sorting, and pagination (max 50 items per request)
 - `getDocument` - Lookup document by primary key
 - `countDocuments` - Return document count for an index
+- `uploadDocuments` - Upload new documents to an index
+- `mergeDocuments` - Update existing documents in an index
+- `mergeOrUploadDocuments` - Update existing or create new documents
+- `deleteDocuments` - Delete documents from an index by key
+
+### Synonym Map Management
+- `listSynonymMaps` - List all synonym map names
+- `getSynonymMap` - Get synonym map definition
+- `createOrUpdateSynonymMap` - Create or update a synonym map
+- `deleteSynonymMap` - Delete a synonym map
 
 ### Data Source Management
 - `listDataSources` - List data source connection names
@@ -104,7 +127,7 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 - `getIndexer` - Get indexer configuration
 - `runIndexer` - Run indexer immediately
 - `resetIndexer` - Reset change tracking for full re-crawl
-- `getIndexerStatus` - Get execution history/status
+- `getIndexerStatus` - Get execution history/status (configurable history limit, default 5)
 
 ### Skillset Management
 - `listSkillsets` - List skillset names
@@ -148,3 +171,7 @@ Or use Claude Desktop:
 - All Azure Search operations use the REST API directly via fetch()
 - Response format is simplified to text content type with JSON stringified data
 - Complex features like vector search and advanced create/update operations are not yet implemented in the simplified version
+- Large responses (>20KB) are automatically handled via:
+  - Intelligent summarization using Azure OpenAI (if configured)
+  - Pagination for array results
+  - Smart truncation as fallback
