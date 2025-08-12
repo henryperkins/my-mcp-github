@@ -8,7 +8,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "my-mcp-github",
+	"name": "azure-search-mcp",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-03-10",
 	"compatibility_flags": [
@@ -19,14 +19,13 @@
 		 * https://developers.cloudflare.com/workers/configuration/secrets/
 		 * 
 		 * Commands to set secrets:
-		 * npx wrangler secret put GITHUB_CLIENT_ID
-		 * npx wrangler secret put GITHUB_CLIENT_SECRET
-		 * npx wrangler secret put COOKIE_ENCRYPTION_KEY
+		 * npx wrangler secret put AZURE_SEARCH_ENDPOINT
+		 * npx wrangler secret put AZURE_SEARCH_API_KEY
 		 */
 	"migrations": [
 		{
 			"new_sqlite_classes": [
-				"MyMCP"
+				"AzureSearchMCP"
 			],
 			"tag": "v1"
 		}
@@ -34,23 +33,15 @@
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "MyMCP",
+				"class_name": "AzureSearchMCP",
 				"name": "MCP_OBJECT"
 			}
 		]
 	},
-	"kv_namespaces": [
-		{
-			"binding": "OAUTH_KV",
-			"id": "<Add-KV-ID>"
-		}
-	],
-	"ai": {
-		"binding": "AI"
-	},
 	"observability": {
 		"enabled": true
 	},
+	"logpush": true,
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement

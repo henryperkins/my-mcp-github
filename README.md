@@ -1,144 +1,227 @@
-# Model Context Protocol (MCP) Server + Github OAuth
+# Azure AI Search MCP Server
 
-This is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server that supports remote MCP connections, with Github OAuth built-in.
+A powerful MCP (Model Context Protocol) server for managing Azure AI Search services, deployed on Cloudflare Workers. Features intelligent response summarization with Azure OpenAI and comprehensive search index management.
 
-You can deploy it to your own Cloudflare account, and after you create your own Github OAuth client app, you'll have a fully functional remote MCP server that you can build off. Users will be able to connect to your MCP server by signing in with their GitHub account.
+## Features
 
-You can use this as a reference example for how to integrate other OAuth providers with an MCP server deployed to Cloudflare, using the [`workers-oauth-provider` library](https://github.com/cloudflare/workers-oauth-provider).
+- 🔍 **Full Azure Search Management** - Manage indexes, documents, data sources, indexers, and skillsets
+- 🤖 **Intelligent Summarization** - Large responses (>20KB) are automatically summarized using GPT-4o-mini
+- 📄 **Smart Pagination** - Automatic pagination for large result sets (max 50 items per search)
+- 🚀 **Cloudflare Workers** - Fast, globally distributed edge deployment
+- 🔌 **Multiple Transports** - Supports both SSE and standard HTTP endpoints
+- ⚡ **No OAuth Required** - Uses Azure Search API keys directly
 
-The MCP server (powered by [Cloudflare Workers](https://developers.cloudflare.com/workers/)): 
+## Prerequisites
 
-* Acts as OAuth _Server_ to your MCP clients
-* Acts as OAuth _Client_ to your _real_ OAuth server (in this case, GitHub)
+- Azure AI Search service with admin API key
+- Azure OpenAI resource (optional, for summarization)
+- Cloudflare account (for deployment)
+- Node.js 18+ and npm
 
-## Getting Started
+## Quick Start
 
-Clone the repo directly & install dependencies: `npm install`.
+### 1. Clone and Install
 
-Alternatively, you can use the command line below to get the remote MCP Server created on your local machine:
 ```bash
-npm create cloudflare@latest -- my-mcp-server --template=cloudflare/ai/demos/remote-mcp-github-oauth
+git clone <your-repo>
+cd azure-search-mcp
+npm install
 ```
 
-### For Production
-Create a new [GitHub OAuth App](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app): 
-- For the Homepage URL, specify `https://mcp-github-oauth.<your-subdomain>.workers.dev`
-- For the Authorization callback URL, specify `https://mcp-github-oauth.<your-subdomain>.workers.dev/callback`
-- Note your Client ID and generate a Client secret. 
-- Set secrets via Wrangler
+### 2. Configure Environment
+
+#### Local Development
+Create `.dev.vars` file:
 ```bash
-wrangler secret put GITHUB_CLIENT_ID
-wrangler secret put GITHUB_CLIENT_SECRET
-wrangler secret put COOKIE_ENCRYPTION_KEY # add any random string here e.g. openssl rand -hex 32
+AZURE_SEARCH_ENDPOINT=https://your-search-service.search.windows.net
+AZURE_SEARCH_API_KEY=your_admin_api_key
+AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com/
+AZURE_OPENAI_API_KEY=your_openai_api_key
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 ```
 
-> [!IMPORTANT]
-> When you create the first secret, Wrangler will ask if you want to create a new Worker. Submit "Y" to create a new Worker and save the secret.
+#### Production Deployment
+```bash
+# Azure Search (Required)
+wrangler secret put AZURE_SEARCH_ENDPOINT
+wrangler secret put AZURE_SEARCH_API_KEY
 
-#### Set up a KV namespace
-- Create the KV namespace: 
-`wrangler kv namespace create "OAUTH_KV"`
-- Update the Wrangler file with the KV ID
-
-#### Deploy & Test
-Deploy the MCP server to make it available on your workers.dev domain 
-` wrangler deploy`
-
-Test the remote server using [Inspector](https://modelcontextprotocol.io/docs/tools/inspector): 
-
-```
-npx @modelcontextprotocol/inspector@latest
-```
-Enter `https://mcp-github-oauth.<your-subdomain>.workers.dev/sse` and hit connect. Once you go through the authentication flow, you'll see the Tools working: 
-
-<img width="640" alt="image" src="https://github.com/user-attachments/assets/7973f392-0a9d-4712-b679-6dd23f824287" />
-
-You now have a remote MCP server deployed! 
-
-### Access Control
-
-This MCP server uses GitHub OAuth for authentication. All authenticated GitHub users can access basic tools like "add" and "userInfoOctokit".
-
-The "generateImage" tool is restricted to specific GitHub users listed in the `ALLOWED_USERNAMES` configuration:
-
-```typescript
-// Add GitHub usernames for image generation access
-const ALLOWED_USERNAMES = new Set([
-  'yourusername',
-  'teammate1'
-]);
+# Azure OpenAI (Optional - for summarization)
+wrangler secret put AZURE_OPENAI_ENDPOINT
+wrangler secret put AZURE_OPENAI_API_KEY
+wrangler secret put AZURE_OPENAI_DEPLOYMENT
 ```
 
-### Access the remote MCP server from Claude Desktop
+### 3. Deploy
 
-Open Claude Desktop and navigate to Settings -> Developer -> Edit Config. This opens the configuration file that controls which MCP servers Claude can access.
+```bash
+# Development server (local)
+npm run dev
+# Available at http://localhost:8788
 
-Replace the content with the following configuration. Once you restart Claude Desktop, a browser window will open showing your OAuth login page. Complete the authentication flow to grant Claude access to your MCP server. After you grant access, the tools will become available for you to use. 
-
+# Production deployment
+npm run deploy
+# Available at https://azure-search-mcp.<your-subdomain>.workers.dev
 ```
+
+**Endpoints:**
+- SSE: `https://azure-search-mcp.<your-subdomain>.workers.dev/sse`
+- HTTP: `https://azure-search-mcp.<your-subdomain>.workers.dev/mcp`
+
+## Client Configuration
+
+### Claude Desktop
+
+Add to your configuration file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+**Linux**: `~/.config/claude/claude_desktop_config.json`
+
+```json
 {
   "mcpServers": {
-    "math": {
+    "azure-search": {
       "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://mcp-github-oauth.<your-subdomain>.workers.dev/sse"
-      ]
+      "args": ["mcp-remote", "https://your-worker.workers.dev/sse"]
     }
   }
 }
 ```
 
-Once the Tools (under 🔨) show up in the interface, you can ask Claude to use them. For example: "Could you use the math tool to add 23 and 19?". Claude should invoke the tool and show the result generated by the MCP server.
+### Claude CLI
 
-### For Local Development
-If you'd like to iterate and test your MCP server, you can do so in local development. This will require you to create another OAuth App on GitHub: 
-- For the Homepage URL, specify `http://localhost:8788`
-- For the Authorization callback URL, specify `http://localhost:8788/callback`
-- Note your Client ID and generate a Client secret. 
-- Create a `.dev.vars` file in your project root with: 
-```
-GITHUB_CLIENT_ID=your_development_github_client_id
-GITHUB_CLIENT_SECRET=your_development_github_client_secret
+```bash
+# Add the MCP server
+claude mcp add --transport sse azure-search https://your-worker.workers.dev/sse
+
+# Or use directly
+claude -p "Search for AI documents" \
+  --mcp-server azure-search=https://your-worker.workers.dev/sse
 ```
 
-#### Develop & Test
-Run the server locally to make it available at `http://localhost:8788`
-`wrangler dev`
+### MCP Inspector (Testing)
 
-To test the local server, enter `http://localhost:8788/sse` into Inspector and hit connect. Once you follow the prompts, you'll be able to "List Tools". 
+```bash
+npx @modelcontextprotocol/inspector@latest
+# Enter URL: https://your-worker.workers.dev/sse
+```
 
-#### Using Claude and other MCP Clients
+## Available Tools
 
-When using Claude to connect to your remote MCP server, you may see some error messages. This is because Claude Desktop doesn't yet support remote MCP servers, so it sometimes gets confused. To verify whether the MCP server is connected, hover over the 🔨 icon in the bottom right corner of Claude's interface. You should see your tools available there.
+### Index Management
+- `listIndexes` - List all search indexes
+- `getIndex` - Get index definition and schema
+- `getIndexStats` - View document count and storage usage
+- `deleteIndex` - Delete an index and all its documents
 
-#### Using Cursor and other MCP Clients
+### Document Operations
+- `searchDocuments` - Search with filters, sorting, and pagination
+  - Max 50 results per request
+  - Supports skip/top for pagination
+  - Full OData filter syntax
+- `getDocument` - Retrieve document by key
+- `countDocuments` - Get total document count
 
-To connect Cursor with your MCP server, choose `Type`: "Command" and in the `Command` field, combine the command and args fields into one (e.g. `npx mcp-remote https://<your-worker-name>.<your-subdomain>.workers.dev/sse`).
+### Indexer Management
+- `listIndexers` - List all indexers
+- `getIndexer` - Get indexer configuration
+- `runIndexer` - Trigger indexer execution
+- `resetIndexer` - Reset change tracking
+- `getIndexerStatus` - View execution history (configurable limit)
 
-Note that while Cursor supports HTTP+SSE servers, it doesn't support authentication, so you still need to use `mcp-remote` (and to use a STDIO server, not an HTTP one).
+### Data Sources & Skillsets
+- `listDataSources` - List data source connections
+- `getDataSource` - Get connection details
+- `listSkillsets` - List AI enrichment skillsets
+- `getSkillset` - Get skillset configuration
 
-You can connect your MCP server to other MCP clients like Windsurf by opening the client's configuration file, adding the same JSON that was used for the Claude setup, and restarting the MCP client.
+## Usage Examples
 
-## How does it work? 
+### Search Documents
+```javascript
+{
+  "tool": "searchDocuments",
+  "arguments": {
+    "indexName": "products",
+    "search": "laptop",
+    "filter": "category eq 'Electronics'",
+    "top": 10,
+    "skip": 0,
+    "orderBy": "price desc"
+  }
+}
+```
 
-#### OAuth Provider
-The OAuth Provider library serves as a complete OAuth 2.1 server implementation for Cloudflare Workers. It handles the complexities of the OAuth flow, including token issuance, validation, and management. In this project, it plays the dual role of:
+### Get Indexer Status
+```javascript
+{
+  "tool": "getIndexerStatus",
+  "arguments": {
+    "name": "my-indexer",
+    "historyLimit": 5
+  }
+}
+```
 
-- Authenticating MCP clients that connect to your server
-- Managing the connection to GitHub's OAuth services
-- Securely storing tokens and authentication state in KV storage
+## Response Handling
 
-#### Durable MCP
-Durable MCP extends the base MCP functionality with Cloudflare's Durable Objects, providing:
-- Persistent state management for your MCP server
-- Secure storage of authentication context between requests
-- Access to authenticated user information via `this.props`
-- Support for conditional tool availability based on user identity
+### Intelligent Summarization
+When responses exceed 20KB:
+1. Attempts to summarize using Azure OpenAI (GPT-4o-mini)
+2. Preserves key technical details and structure
+3. Falls back to smart truncation if OpenAI unavailable
 
-#### MCP Remote
-The MCP Remote library enables your server to expose tools that can be invoked by MCP clients like the Inspector. It:
-- Defines the protocol for communication between clients and your server
-- Provides a structured way to define tools
-- Handles serialization and deserialization of requests and responses
-- Maintains the Server-Sent Events (SSE) connection between clients and your server
+### Pagination
+- Search results: Maximum 50 items per request
+- Use `skip` and `top` parameters for pagination
+- Arrays show first 10 items with pagination hints
+
+## Development
+
+```bash
+# Type checking
+npm run type-check
+
+# Generate Cloudflare types
+npm run cf-typegen
+
+# View logs
+wrangler tail
+```
+
+## Troubleshooting
+
+### Permission Errors
+If you see Azure OpenAI permission errors:
+```bash
+az role assignment create \
+  --assignee <service-principal-id> \
+  --role "Cognitive Services OpenAI User" \
+  --scope /subscriptions/<subscription-id>
+```
+
+### Large Response Issues
+- Responses >20KB trigger automatic summarization
+- Ensure Azure OpenAI credentials are configured
+- Use pagination parameters for large result sets
+
+### Connection Issues
+- Verify API keys are correct
+- Check Azure Search service is running
+- Ensure Cloudflare Worker is deployed
+
+## Architecture
+
+- **Runtime**: Cloudflare Workers with Durable Objects
+- **Protocol**: MCP (Model Context Protocol)
+- **APIs**: Azure Search REST API v2024-07-01, Azure OpenAI v2024-08-01-preview
+- **Language**: TypeScript
+- **Files**:
+  - `src/index.ts` - Main MCP server
+  - `src/azure-search-client.ts` - Azure Search REST client
+  - `src/azure-openai-client.ts` - Azure OpenAI client
+
+## License
+
+MIT
