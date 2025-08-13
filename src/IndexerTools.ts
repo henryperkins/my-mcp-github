@@ -4,51 +4,56 @@ import { ResponseFormatter } from "./utils/response-helper";
 import getToolHints from "./utils/toolHints";
 import type { ToolContext } from "./types";
 import { DEFAULT_TIMEOUT_MS } from "./constants";
+import type { ElicitationRequest } from "./tool-elicitation";
+import { elicitIfNeeded, needsElicitation } from "./utils/elicitation-integration";
 
 // Elicitation schema for Blob indexer creation/update
-function buildSchemaForBlobIndexer() {
+function createBlobIndexerElicitation(): ElicitationRequest {
   return {
-    type: "object",
-    properties: {
-      name: { type: "string", title: "Indexer name" },
-      dataSourceName: { type: "string", title: "Data source name" },
-      targetIndexName: { type: "string", title: "Target index name" },
-      scheduleInterval: {
-        type: "string",
-        title: "Schedule interval",
-        description: "ISO-8601 duration (e.g., PT2H)",
-        default: "PT2H",
+    message: "Let's set up a Blob indexer. I can collect the required details.",
+    requestedSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", title: "Indexer name" },
+        dataSourceName: { type: "string", title: "Data source name" },
+        targetIndexName: { type: "string", title: "Target index name" },
+        scheduleInterval: {
+          type: "string",
+          title: "Schedule interval",
+          description: "ISO-8601 duration (e.g., PT2H)",
+          default: "PT2H",
+        },
+        runNow: { type: "boolean", title: "Run immediately", default: false },
+        parsingMode: {
+          type: "string",
+          title: "Parsing mode",
+          enum: ["default", "jsonArray", "delimitedText", "lineSeparated"],
+          default: "default",
+        },
+        indexedFileNameExtensions: {
+          type: "string",
+          title: "Indexed file extensions",
+          default: ".md,.ts,.js,.json,.yml,.yaml,.txt",
+        },
+        excludedFileNameExtensions: {
+          type: "string",
+          title: "Excluded file extensions",
+          default: ".png,.jpg,.gif,.svg,.ico",
+        },
+        dataToExtract: {
+          type: "string",
+          title: "Data to extract",
+          enum: ["contentOnly", "contentAndMetadata", "storageMetadata"],
+          default: "contentAndMetadata",
+        },
+        indexStorageMetadataOnlyForOversizedDocuments: {
+          type: "boolean",
+          title: "Index only metadata for oversized docs",
+          default: true,
+        },
       },
-      runNow: { type: "boolean", title: "Run immediately", default: false },
-      parsingMode: {
-        type: "string",
-        title: "Parsing mode",
-        enum: ["default", "jsonArray", "delimitedText", "lineSeparated"],
-        default: "default",
-      },
-      indexedFileNameExtensions: {
-        type: "string",
-        title: "Indexed file extensions",
-        default: ".md,.ts,.js,.json,.yml,.yaml,.txt",
-      },
-      excludedFileNameExtensions: {
-        type: "string",
-        title: "Excluded file extensions",
-        default: ".png,.jpg,.gif,.svg,.ico",
-      },
-      dataToExtract: {
-        type: "string",
-        title: "Data to extract",
-        enum: ["contentOnly", "contentAndMetadata", "storageMetadata"],
-        default: "contentAndMetadata",
-      },
-      indexStorageMetadataOnlyForOversizedDocuments: {
-        type: "boolean",
-        title: "Index only metadata for oversized docs",
-        default: true,
-      },
+      required: ["name", "dataSourceName", "targetIndexName"],
     },
-    required: ["name", "dataSourceName", "targetIndexName"],
   };
 }
 
@@ -187,25 +192,24 @@ export function registerIndexerTools(server: any, context: ToolContext) {
         let __dataToExtract = dataToExtract;
         let __indexStorageMetadataOnlyForOversizedDocuments = indexStorageMetadataOnlyForOversizedDocuments;
 
-        if ((!__name || !__dataSourceName || !__targetIndexName) && (server as any)?.server?.elicitInput) {
+        if (needsElicitation({ name: __name, dataSourceName: __dataSourceName, targetIndexName: __targetIndexName }, ["name", "dataSourceName", "targetIndexName"])) {
           try {
-            const requestedSchema = buildSchemaForBlobIndexer();
-            const elicited = await (server as any).server.elicitInput({
-              message: "Let's set up a Blob indexer. I can collect the required details.",
-              requestedSchema,
-            });
-            const a: any = (elicited as any)?.content ?? elicited ?? {};
-            __name = __name || a.name;
-            __dataSourceName = __dataSourceName || a.dataSourceName;
-            __targetIndexName = __targetIndexName || a.targetIndexName;
-            __scheduleInterval = __scheduleInterval ?? a.scheduleInterval ?? "PT2H";
-            __runNow = __runNow ?? a.runNow ?? false;
-            __parsingMode = __parsingMode ?? a.parsingMode ?? "default";
-            __indexedFileNameExtensions = __indexedFileNameExtensions ?? a.indexedFileNameExtensions ?? ".md,.ts,.js,.json,.yml,.yaml,.txt";
-            __excludedFileNameExtensions = __excludedFileNameExtensions ?? a.excludedFileNameExtensions ?? ".png,.jpg,.gif,.svg,.ico";
-            __dataToExtract = __dataToExtract ?? a.dataToExtract ?? "contentAndMetadata";
-            __indexStorageMetadataOnlyForOversizedDocuments =
-              __indexStorageMetadataOnlyForOversizedDocuments ?? a.indexStorageMetadataOnlyForOversizedDocuments ?? true;
+            const elicited = await elicitIfNeeded(context.agent || server, createBlobIndexerElicitation());
+            if (elicited) {
+              __name = __name || elicited.name;
+              __dataSourceName = __dataSourceName || elicited.dataSourceName;
+              __targetIndexName = __targetIndexName || elicited.targetIndexName;
+              __scheduleInterval = __scheduleInterval ?? elicited.scheduleInterval ?? "PT2H";
+              __runNow = __runNow ?? elicited.runNow ?? false;
+              __parsingMode = __parsingMode ?? elicited.parsingMode ?? "default";
+              __indexedFileNameExtensions =
+                __indexedFileNameExtensions ?? elicited.indexedFileNameExtensions ?? ".md,.ts,.js,.json,.yml,.yaml,.txt";
+              __excludedFileNameExtensions =
+                __excludedFileNameExtensions ?? elicited.excludedFileNameExtensions ?? ".png,.jpg,.gif,.svg,.ico";
+              __dataToExtract = __dataToExtract ?? elicited.dataToExtract ?? "contentAndMetadata";
+              __indexStorageMetadataOnlyForOversizedDocuments =
+                __indexStorageMetadataOnlyForOversizedDocuments ?? elicited.indexStorageMetadataOnlyForOversizedDocuments ?? true;
+            }
           } catch {
             // continue with provided params
           }

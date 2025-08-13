@@ -34,8 +34,7 @@ class AzureSearchMCP extends McpAgent {
       prompts: { listChanged: true },
       resources: { subscribe: true, listChanged: true },
       logging: {},
-      tools: { listChanged: true },
-      elicitation: {}
+      tools: { listChanged: true }
     }
   });
 

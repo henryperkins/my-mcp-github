@@ -1,6 +1,7 @@
 // src/types.ts
 import type { AzureSearchClient } from "./azure-search-client";
-import type { Summarizer } from "./utils/response";
+ // Local Summarizer type to avoid cross-module drift
+ export type Summarizer = (text: string, maxTokens?: number) => Promise<string>;
 import { z } from "zod";
 import {
   IndexDefinitionSchema,

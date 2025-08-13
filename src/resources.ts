@@ -1,5 +1,4 @@
 // src/resources.ts
-import { formatResponse } from "./utils/response";
 
 /**
  * MCP Resource annotations for better client integration
