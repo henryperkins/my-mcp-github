@@ -109,6 +109,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
       includeStats: z.boolean().optional().describe("Include document count and storage size for each index"),
       verbose: z.boolean().optional().describe("Include full index definitions (fields, analyzers, etc.)"),
     },
+    getToolHints("GET"),
     async ({ includeStats, verbose }: { includeStats?: boolean; verbose?: boolean }) => {
       try {
         const client = getClient();
@@ -169,6 +170,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
     "getIndex",
     "Fetch full index definition.",
     { indexName: z.string() },
+    getToolHints("GET"),
     async ({ indexName }: { indexName: string }) => {
       try {
         const client = getClient();
@@ -185,6 +187,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
     "getIndexStats",
     "Get document count and storage usage.",
     { indexName: z.string() },
+    getToolHints("GET"),
     async ({ indexName }: { indexName: string }) => {
       try {
         const client = getClient();
@@ -221,6 +224,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
     "deleteIndex",
     "⚠️ DESTRUCTIVE: Permanently delete an index and all its documents. This action cannot be undone. Please confirm carefully before proceeding.",
     { indexName: z.string() },
+    getToolHints("DELETE"),
     async ({ indexName }: { indexName: string }) => {
       try {
         const client = getClient();
@@ -288,6 +292,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         .optional()
         .describe("Custom index definition (required if template is 'custom' or not specified)"),
     },
+    getToolHints("POST"),
     async ({ template, indexName, cloneFrom, vectorDimensions, language, validate, indexDefinition }: any) => {
       try {
         const client = getClient();
@@ -390,7 +395,6 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return rf.formatError(e, { tool: "createIndex" });
       }
     },
-    getToolHints("POST"),
   );
 
   server.tool(
@@ -441,6 +445,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         })
         .optional(),
     },
+    getToolHints("PUT"),
     async ({ indexName, addFields, updateSemanticConfig, validate, mergeWithExisting, indexDefinition }: any) => {
       try {
         const client = getClient();
@@ -533,19 +538,19 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return rf.formatError(e, { tool: "createOrUpdateIndex", indexName });
       }
     },
-    getToolHints("PUT"),
   );
 
-  const ListIndexesPaginatedSchema = z.object({
+  const ListIndexesPaginatedParams = {
     cursor: z.string().optional().describe("Opaque pagination cursor"),
     pageSize: z.number().int().positive().max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
-  });
+  } as const;
 
   server.tool(
     "listIndexesPaginated",
     "List indexes with an opaque MCP-style cursor.",
-    ListIndexesPaginatedSchema,
-    async (params: z.infer<typeof ListIndexesPaginatedSchema>) => {
+    ListIndexesPaginatedParams,
+    getToolHints("GET"),
+    async (params: any) => {
       const { cursor, pageSize } = params;
       try {
         const client = context.getClient();
@@ -568,6 +573,5 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return rf.formatError(e, { tool: "listIndexesPaginated", cursor, pageSize });
       }
     },
-    getToolHints("GET"),
   );
 }

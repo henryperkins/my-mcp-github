@@ -73,7 +73,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
   });
   // ---------------- INDEXERS ----------------
-  server.tool("listIndexers", "List indexer names.", {}, async () => {
+  server.tool("listIndexers", "List indexer names.", {}, getToolHints("GET" as const), async () => {
     const client = getClient();
     return rf.executeWithTimeout(
       client.listIndexers().then((indexers: unknown[]) => {
@@ -86,12 +86,12 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     );
   });
 
-  server.tool("getIndexer", "Get an indexer.", { name: z.string() }, async ({ name }: { name: string }) => {
+  server.tool("getIndexer", "Get an indexer.", { name: z.string() }, getToolHints("GET" as const), async ({ name }: { name: string }) => {
     const client = getClient();
     return rf.executeWithTimeout(client.getIndexer(name), DEFAULT_TIMEOUT_MS, "getIndexer", { tool: "getIndexer", name });
   });
 
-  server.tool("runIndexer", "Run an indexer now.", { name: z.string() }, async ({ name }: { name: string }) => {
+  server.tool("runIndexer", "Run an indexer now.", { name: z.string() }, getToolHints("POST" as const), async ({ name }: { name: string }) => {
     try {
       const client = getClient();
       await rf.executeWithTimeout(client.runIndexer(name), DEFAULT_TIMEOUT_MS, "runIndexer", { tool: "runIndexer", name });
@@ -101,7 +101,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     }
   });
 
-  server.tool("resetIndexer", "Reset change tracking for an indexer (full re-crawl).", { name: z.string() }, async ({ name }: { name: string }) => {
+  server.tool("resetIndexer", "Reset change tracking for an indexer (full re-crawl).", { name: z.string() }, getToolHints("POST" as const), async ({ name }: { name: string }) => {
     try {
       const client = getClient();
       await rf.executeWithTimeout(client.resetIndexer(name), DEFAULT_TIMEOUT_MS, "resetIndexer", { tool: "resetIndexer", name });
@@ -118,6 +118,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
       name: z.string(),
       historyLimit: z.number().int().positive().max(50).default(5).describe("Limit execution history entries"),
     },
+    getToolHints("GET" as const),
     async ({ name, historyLimit }: { name: string; historyLimit: number }) => {
       const client = getClient();
       return rf.executeWithTimeout(
@@ -141,9 +142,12 @@ export function registerIndexerTools(server: any, context: ToolContext) {
   );
 
   // NEW: Create or update a Blob indexer pointing to the given data source and index
-  const CreateOrUpdateBlobIndexerSchema = z.object({
+  const CreateOrUpdateBlobIndexerParams = {
     name: z.string().optional().describe("Indexer name"),
-    dataSourceName: z.string().optional().describe("Existing data source connection name (e.g. from createOrUpdateBlobDataSource)"),
+    dataSourceName: z
+      .string()
+      .optional()
+      .describe("Existing data source connection name (e.g. from createOrUpdateBlobDataSource)"),
     targetIndexName: z.string().optional().describe("Target search index name"),
     scheduleInterval: z.string().optional().default("PT2H").describe("ISO-8601 duration (e.g., PT2H)"),
     runNow: z.boolean().optional().default(false),
@@ -153,17 +157,23 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     dataToExtract: z.enum(["contentOnly", "contentAndMetadata", "storageMetadata"]).optional().default("contentAndMetadata"),
     indexStorageMetadataOnlyForOversizedDocuments: z.boolean().optional().default(true),
     // Fix #6: Allow custom field mappings instead of hard-coding
-    fieldMappings: z.array(z.object({
-      sourceFieldName: z.string(),
-      targetFieldName: z.string(),
-      mappingFunction: z.object({ name: z.string() }).nullable().optional(),
-    })).optional().describe("Custom field mappings from source to index fields"),
-  });
+    fieldMappings: z
+      .array(
+        z.object({
+          sourceFieldName: z.string(),
+          targetFieldName: z.string(),
+          mappingFunction: z.object({ name: z.string() }).nullable().optional(),
+        }),
+      )
+      .optional()
+      .describe("Custom field mappings from source to index fields"),
+  } as const;
 
   server.tool(
     "createOrUpdateBlobIndexer",
     "Create or update an indexer for Azure Blob data source to a target index. Optionally run immediately.",
-    CreateOrUpdateBlobIndexerSchema,
+    CreateOrUpdateBlobIndexerParams,
+    getToolHints("POST" as const),
     async ({
       name,
       dataSourceName,
@@ -176,7 +186,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
       dataToExtract,
       indexStorageMetadataOnlyForOversizedDocuments,
       fieldMappings,
-    }: z.infer<typeof CreateOrUpdateBlobIndexerSchema>) => {
+    }: any) => {
       try {
         const client = getClient();
 

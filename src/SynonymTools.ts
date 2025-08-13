@@ -21,7 +21,7 @@ export function registerSynonymTools(server: any, context: ToolContext) {
     return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
   });
   // ---------------- SYNONYM MAPS ----------------
-  server.tool("listSynonymMaps", "List synonym map names.", {}, async () => {
+  server.tool("listSynonymMaps", "List synonym map names.", {}, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, async () => {
     const client = getClient();
     return rf.executeWithTimeout(
       client.listSynonymMaps().then((synonymMaps: unknown[]) => {
@@ -34,7 +34,7 @@ export function registerSynonymTools(server: any, context: ToolContext) {
     );
   });
 
-  server.tool("getSynonymMap", "Get a synonym map definition.", { name: z.string() }, async ({ name }: { name: string }) => {
+  server.tool("getSynonymMap", "Get a synonym map definition.", { name: z.string() }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, async ({ name }: { name: string }) => {
     const client = getClient();
     return rf.executeWithTimeout(
       client.getSynonymMap(name).then((sm: unknown) => {
@@ -56,16 +56,18 @@ export function registerSynonymTools(server: any, context: ToolContext) {
     );
   });
 
-  const CreateOrUpdateSynonymMapSchema = z.object({
+  // Use raw shape (not z.object) so MCP registers params
+  const CreateOrUpdateSynonymMapParams = {
     name: z.string(),
     synonymMapDefinition: SynonymMapSchema,
-  });
+  } as const;
 
   server.tool(
     "createOrUpdateSynonymMap",
     "Create or update a synonym map to improve search relevance. Define equivalent terms (USA, United States), one-way mappings (cat => feline), or explicit mappings. Use Solr format for synonym rules.",
-    CreateOrUpdateSynonymMapSchema,
-    async ({ name, synonymMapDefinition }: z.infer<typeof CreateOrUpdateSynonymMapSchema>) => {
+    CreateOrUpdateSynonymMapParams,
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    async ({ name, synonymMapDefinition }: any) => {
       const client = getClient();
       return rf.executeWithTimeout(
         client.createOrUpdateSynonymMap(name, synonymMapDefinition),
@@ -76,7 +78,7 @@ export function registerSynonymTools(server: any, context: ToolContext) {
     },
   );
 
-  server.tool("deleteSynonymMap", "Delete a synonym map.", { name: z.string() }, async ({ name }: { name: string }) => {
+  server.tool("deleteSynonymMap", "Delete a synonym map.", { name: z.string() }, { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }, async ({ name }: { name: string }) => {
     try {
       const client = getClient();
       await rf.executeWithTimeout(client.deleteSynonymMap(name), DEFAULT_TIMEOUT_MS, "deleteSynonymMap", {

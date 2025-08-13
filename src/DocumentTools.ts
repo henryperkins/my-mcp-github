@@ -5,8 +5,17 @@ import getToolHints from "./utils/toolHints";
 import { ToolElicitationBuilder } from "./tool-elicitation";
 import { elicitIfNeeded } from "./utils/elicitation-integration";
 import type { ToolContext } from "./types";
-import { SearchParamsSchema, IndexNameSchema, DocumentKeySchema, DocumentBatchSchema, SearchResultsSchema } from "./schemas";
-import { DEFAULT_TIMEOUT_MS } from "./constants";
+import { SearchResultsSchema } from "./schemas";
+import {
+  DEFAULT_TIMEOUT_MS,
+  MAX_SEARCH_RESULTS,
+  DEFAULT_SEARCH_RESULTS,
+  INDEX_NAME_PATTERN,
+  ERROR_INVALID_INDEX_NAME,
+  ERROR_EMPTY_BATCH,
+  ERROR_BATCH_TOO_LARGE,
+  MAX_DOCUMENTS_PER_BATCH,
+} from "./constants";
 
 /**
  * Register document search and CRUD tools.
@@ -22,12 +31,39 @@ export function registerDocumentTools(server: any, context: ToolContext) {
     return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
   });
 
+  // Note: pass raw Zod shape (not z.object) so MCP can register params
   server.tool(
     "searchDocuments",
     "Search for documents using keywords, filters, and sorting. Supports OData filter syntax, pagination (max 50 results per request), field selection, and relevance scoring. Use '*' to retrieve all documents.",
-    SearchParamsSchema,
-    async (params: z.infer<typeof SearchParamsSchema>) => {
-      let { indexName, search, top, skip, select, filter, orderBy, includeTotalCount } = params;
+    {
+      indexName: z
+        .string()
+        .min(1, "Index name is required")
+        .max(128, "Index name must be at most 128 characters")
+        .regex(INDEX_NAME_PATTERN, ERROR_INVALID_INDEX_NAME),
+      search: z.string().default("*").optional(),
+      top: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_SEARCH_RESULTS)
+        .default(DEFAULT_SEARCH_RESULTS)
+        .describe(`Max ${MAX_SEARCH_RESULTS} to prevent large responses`),
+      skip: z.number().int().nonnegative().default(0).describe("Skip N results for pagination"),
+      select: z.array(z.string()).optional().describe("Fields to return (reduces response size)"),
+      filter: z
+        .string()
+        .optional()
+        .refine((val) => !val || !val.includes(";"), "Filter cannot contain semicolons for security"),
+      orderBy: z.string().optional(),
+      // Accept lowercase alias for convenience
+      orderby: z.string().optional(),
+      includeTotalCount: z.boolean().default(true),
+    },
+    // Annotations must be before the callback per MCP SDK API
+    { ...getToolHints("POST") },
+    async (params: any) => {
+      let { indexName, search, top, skip, select, filter, orderBy, orderby, includeTotalCount } = params;
       const client = getClient();
 
       // Elicit search parameters if index not provided
@@ -49,6 +85,7 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         ...(filter && { filter }),
         // Azure Search expects 'orderby' (no $) in POST body
         ...(orderBy && { orderby: orderBy }),
+        ...(orderby && { orderby }),
         ...(includeTotalCount && { count: true }),
       };
 
@@ -61,37 +98,45 @@ export function registerDocumentTools(server: any, context: ToolContext) {
 
       const exec = rf.createToolExecutor<typeof params>("searchDocuments", DEFAULT_TIMEOUT_MS);
       return exec(
-        { indexName, search, top, skip, select, filter, orderBy, includeTotalCount } as any,
+        { indexName, search, top, skip, select, filter, orderBy: orderBy || orderby, includeTotalCount } as any,
         () => client.searchDocuments(indexName, body),
         { tool: "searchDocuments", indexName, ...body },
       );
     },
-    { ...getToolHints("POST"), outputSchema: SearchResultsSchema },
   );
-
-  const GetDocumentSchema = z.object({
-    indexName: IndexNameSchema,
-    key: DocumentKeySchema.transform(String),
-    select: z.array(z.string()).optional(),
-  });
 
   server.tool(
     "getDocument",
     "Lookup a document by its primary key.",
-    GetDocumentSchema,
-    async (params: z.infer<typeof GetDocumentSchema>) => {
+    {
+      indexName: z
+        .string()
+        .min(1, "Index name is required")
+        .max(128, "Index name must be at most 128 characters")
+        .regex(INDEX_NAME_PATTERN, ERROR_INVALID_INDEX_NAME),
+      key: z.union([z.string().min(1, "Document key cannot be empty"), z.number()]).transform(String),
+      select: z.array(z.string()).optional(),
+    },
+    getToolHints("GET"),
+    async (params: any) => {
       const { indexName, key } = params;
       const client = getClient();
       const exec = rf.createToolExecutor<typeof params>("getDocument", DEFAULT_TIMEOUT_MS);
       return exec(params, (p) => client.getDocument(p.indexName, p.key, p.select), { tool: "getDocument", indexName, key });
     },
-    getToolHints("GET"),
   );
 
   server.tool(
     "countDocuments",
     "Return document count.",
-    z.object({ indexName: IndexNameSchema }),
+    {
+      indexName: z
+        .string()
+        .min(1, "Index name is required")
+        .max(128, "Index name must be at most 128 characters")
+        .regex(INDEX_NAME_PATTERN, ERROR_INVALID_INDEX_NAME),
+    },
+    { ...getToolHints("GET"), /* outputSchema intentionally omitted */ },
     async ({ indexName }: { indexName: string }) => {
       const client = getClient();
       const exec = rf.createToolExecutor<{ indexName: string }>("countDocuments", DEFAULT_TIMEOUT_MS);
@@ -104,20 +149,32 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         { tool: "countDocuments", indexName },
       );
     },
-    { ...getToolHints("GET"), outputSchema: z.object({ count: z.number() }) },
   );
 
   // ---------------- DOCUMENT OPERATIONS ----------------
-  const UploadDocumentsSchema = z.object({
-    indexName: IndexNameSchema.optional(),
-    documents: DocumentBatchSchema.optional().describe("Array of documents to upload"),
-  });
-
   server.tool(
     "uploadDocuments",
     "Upload new documents to an index. Documents must match the index schema. Maximum 1000 documents per batch. For existing documents, use mergeDocuments instead.",
-    UploadDocumentsSchema,
-    async (params: z.infer<typeof UploadDocumentsSchema>) => {
+    {
+      indexName: z
+        .string()
+        .min(1, "Index name is required")
+        .max(128, "Index name must be at most 128 characters")
+        .regex(INDEX_NAME_PATTERN, ERROR_INVALID_INDEX_NAME),
+      documents: z
+        .array(
+          z
+            .object({
+              "@search.action": z.enum(["upload", "merge", "mergeOrUpload", "delete"]).optional(),
+            })
+            .catchall(z.unknown()),
+        )
+        .min(1, ERROR_EMPTY_BATCH)
+        .max(MAX_DOCUMENTS_PER_BATCH, ERROR_BATCH_TOO_LARGE)
+        .describe("Array of documents to upload"),
+    },
+    getToolHints("POST"),
+    async (params: any) => {
       let { indexName, documents } = params;
       const client = getClient();
 
@@ -144,19 +201,31 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         documentCount: documents.length,
       });
     },
-    getToolHints("POST"),
   );
-
-  const MergeDocumentsSchema = z.object({
-    indexName: IndexNameSchema.optional(),
-    documents: DocumentBatchSchema.optional().describe("Array of documents to merge"),
-  });
 
   server.tool(
     "mergeDocuments",
     "Merge documents in an index (updates existing documents).",
-    MergeDocumentsSchema,
-    async (params: z.infer<typeof MergeDocumentsSchema>) => {
+    {
+      indexName: z
+        .string()
+        .min(1, "Index name is required")
+        .max(128, "Index name must be at most 128 characters")
+        .regex(INDEX_NAME_PATTERN, ERROR_INVALID_INDEX_NAME),
+      documents: z
+        .array(
+          z
+            .object({
+              "@search.action": z.enum(["upload", "merge", "mergeOrUpload", "delete"]).optional(),
+            })
+            .catchall(z.unknown()),
+        )
+        .min(1, ERROR_EMPTY_BATCH)
+        .max(MAX_DOCUMENTS_PER_BATCH, ERROR_BATCH_TOO_LARGE)
+        .describe("Array of documents to merge"),
+    },
+    getToolHints("POST"),
+    async (params: any) => {
       const { indexName, documents } = params;
       const client = getClient();
       
@@ -175,19 +244,31 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         documentCount: documents.length,
       });
     },
-    getToolHints("POST"),
   );
-
-  const MergeOrUploadDocumentsSchema = z.object({
-    indexName: IndexNameSchema.optional(),
-    documents: DocumentBatchSchema.optional().describe("Array of documents to merge or upload"),
-  });
 
   server.tool(
     "mergeOrUploadDocuments",
     "Merge or upload documents (updates existing or creates new).",
-    MergeOrUploadDocumentsSchema,
-    async (params: z.infer<typeof MergeOrUploadDocumentsSchema>) => {
+    {
+      indexName: z
+        .string()
+        .min(1, "Index name is required")
+        .max(128, "Index name must be at most 128 characters")
+        .regex(INDEX_NAME_PATTERN, ERROR_INVALID_INDEX_NAME),
+      documents: z
+        .array(
+          z
+            .object({
+              "@search.action": z.enum(["upload", "merge", "mergeOrUpload", "delete"]).optional(),
+            })
+            .catchall(z.unknown()),
+        )
+        .min(1, ERROR_EMPTY_BATCH)
+        .max(MAX_DOCUMENTS_PER_BATCH, ERROR_BATCH_TOO_LARGE)
+        .describe("Array of documents to merge or upload"),
+    },
+    getToolHints("POST"),
+    async (params: any) => {
       const { indexName, documents } = params;
       const client = getClient();
       
@@ -206,23 +287,26 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         documentCount: documents.length,
       });
     },
-    getToolHints("POST"),
   );
-
-  const DeleteDocumentsSchema = z.object({
-    indexName: IndexNameSchema.optional(),
-    keyDocuments: z
-      .array(z.record(z.unknown()))
-      .min(1, "At least one document must be provided")
-      .optional()
-      .describe("Array of document objects with key field(s) set (e.g., [{\"id\": \"123\"}] where \"id\" is the key field)"),
-  });
 
   server.tool(
     "deleteDocuments",
     "⚠️ Delete specific documents from an index by their key values. This is permanent and cannot be undone. Provide an array of document objects with the key field(s) set (e.g., [{\"id\": \"123\"}] where \"id\" is the index's key field).",
-    DeleteDocumentsSchema,
-    async (params: z.infer<typeof DeleteDocumentsSchema>) => {
+    {
+      indexName: z
+        .string()
+        .min(1, "Index name is required")
+        .max(128, "Index name must be at most 128 characters")
+        .regex(INDEX_NAME_PATTERN, ERROR_INVALID_INDEX_NAME),
+      keyDocuments: z
+        .array(z.record(z.unknown()))
+        .min(1, "At least one document must be provided")
+        .describe(
+          "Array of document objects with key field(s) set (e.g., [{\"id\": \"123\"}] where \"id\" is the key field)",
+        ),
+    },
+    getToolHints("DELETE"),
+    async (params: any) => {
       const { indexName, keyDocuments } = params;
       const client = getClient();
       
@@ -241,6 +325,5 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         documentCount: keyDocuments.length,
       });
     },
-    getToolHints("DELETE"),
   );
 }

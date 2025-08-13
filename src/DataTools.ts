@@ -5,6 +5,7 @@ import { ElicitationRequest } from "./tool-elicitation";
 import { elicitIfNeeded, mergeElicitedParams, needsElicitation } from "./utils/elicitation-integration";
 import type { ToolContext } from "./types";
 import { DEFAULT_TIMEOUT_MS } from "./constants";
+import getToolHints from "./utils/toolHints";
 
 // MCP-compliant elicitation builders
 function createBlobDataSourceElicitation(): ElicitationRequest {
@@ -98,7 +99,7 @@ export function registerDataTools(server: any, context: ToolContext) {
     return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
   });
   // ---------------- DATA SOURCES ----------------
-  server.tool("listDataSources", "List data source connection names.", {}, async () => {
+  server.tool("listDataSources", "List data source connection names.", {}, getToolHints("GET" as const), async () => {
     const client = getClient();
     return rf.executeWithTimeout(
       client.listDataSources().then((dataSources: unknown[]) => {
@@ -111,13 +112,14 @@ export function registerDataTools(server: any, context: ToolContext) {
     );
   });
 
-  server.tool("getDataSource", "Get a data source connection.", { name: z.string() }, async ({ name }: { name: string }) => {
+  server.tool("getDataSource", "Get a data source connection.", { name: z.string() }, getToolHints("GET" as const), async ({ name }: { name: string }) => {
     const client = getClient();
     return rf.executeWithTimeout(client.getDataSource(name), DEFAULT_TIMEOUT_MS, "getDataSource", { tool: "getDataSource", name });
   });
 
   // NEW: Create or update an Azure Blob data source
-  const CreateOrUpdateBlobDataSourceSchema = z.object({
+  // Use raw shape (not z.object) so MCP registers params correctly
+  const CreateOrUpdateBlobDataSourceParams = {
     name: z.string().optional().describe("Data source name (unique within the Search service)"),
     storageAccount: z.string().optional().describe("Azure Storage account name"),
     containerName: z.string().optional().describe("Blob container name"),
@@ -137,13 +139,14 @@ export function registerDataTools(server: any, context: ToolContext) {
       .optional(),
     description: z.string().optional(),
     highWaterMarkColumnName: z.string().optional().default("metadata_storage_last_modified"),
-  });
+  } as const;
 
   server.tool(
     "createOrUpdateBlobDataSource",
     "Create or update an Azure Blob Storage data source connection. Provide a connectionString or accountKey.",
-    CreateOrUpdateBlobDataSourceSchema,
-    async ({ name, storageAccount, containerName, auth, description, highWaterMarkColumnName }: z.infer<typeof CreateOrUpdateBlobDataSourceSchema>) => {
+    CreateOrUpdateBlobDataSourceParams,
+    getToolHints("POST" as const),
+    async ({ name, storageAccount, containerName, auth, description, highWaterMarkColumnName }: any) => {
       try {
         const client = getClient();
 
@@ -228,7 +231,7 @@ export function registerDataTools(server: any, context: ToolContext) {
 
   // ---------------- SYNC PLAN (LOCAL) ----------------
   // Generates safe, copy-paste commands leveraging local Azure CLI and the repo's existing scripts.
-  const GenerateBlobSyncPlanSchema = z.object({
+  const GenerateBlobSyncPlanParams = {
     storageAccount: z.string().optional(),
     containerName: z.string().optional(),
     absoluteRepoPath: z
@@ -239,13 +242,14 @@ export function registerDataTools(server: any, context: ToolContext) {
       .enum(["localAzCli", "uploadBatch"])
       .default("localAzCli")
       .describe("localAzCli uses sync-to-blob-local.sh; uploadBatch shows az storage blob upload-batch directly"),
-  });
+  } as const;
 
   server.tool(
     "generateBlobSyncPlan",
     "Generate a local sync plan to push this repo to an Azure Blob container using Azure CLI.",
-    GenerateBlobSyncPlanSchema,
-    async ({ storageAccount, containerName, absoluteRepoPath, strategy }: z.infer<typeof GenerateBlobSyncPlanSchema>) => {
+    GenerateBlobSyncPlanParams,
+    getToolHints("POST" as const),
+    async ({ storageAccount, containerName, absoluteRepoPath, strategy }: any) => {
       try {
         // Check if we need to elicit missing parameters
         if (needsElicitation({ storageAccount, containerName }, ["storageAccount", "containerName"])) {
