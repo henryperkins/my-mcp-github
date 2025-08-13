@@ -1,4 +1,5 @@
 // Enhanced Index Builder with TypeScript types and validation
+import { resolveAnalyzerForLanguage } from "./utils/languageAnalyzers";
 export interface FieldDefinition {
   name: string;
   type: 'Edm.String' | 'Edm.Int32' | 'Edm.Int64' | 'Edm.Double' | 'Edm.Boolean' | 
@@ -259,25 +260,28 @@ export class IndexBuilder {
   
   // Language analyzer helpers
   setLanguageAnalyzer(fieldName: string, language: string): this {
-    const languageAnalyzers: Record<string, string> = {
-      'english': 'en.microsoft',
-      'french': 'fr.microsoft',
-      'german': 'de.microsoft',
-      'spanish': 'es.microsoft',
-      'italian': 'it.microsoft',
-      'portuguese': 'pt-BR.microsoft',
-      'dutch': 'nl.microsoft',
-      'russian': 'ru.microsoft',
-      'japanese': 'ja.microsoft',
-      'chinese': 'zh-Hans.microsoft',
-      'korean': 'ko.microsoft',
-      'arabic': 'ar.microsoft',
-      'hindi': 'hi.microsoft'
-    };
-    
     const field = this.definition.fields.find(f => f.name === fieldName);
     if (field) {
-      field.analyzer = languageAnalyzers[language.toLowerCase()] || 'standard.lucene';
+      field.analyzer = resolveAnalyzerForLanguage(language) ?? 'standard.lucene';
+    }
+    return this;
+  }
+
+  /** Apply a specific analyzer to all searchable Edm.String fields */
+  applyAnalyzerToSearchableStrings(analyzer: string): this {
+    for (const f of this.definition.fields) {
+      if (f.type === 'Edm.String' && f.searchable) {
+        f.analyzer = analyzer;
+      }
+    }
+    return this;
+  }
+
+  /** Convenience: resolve analyzer from language and apply to all text fields */
+  applyLanguageToAllText(language: string): this {
+    const analyzer = resolveAnalyzerForLanguage(language);
+    if (analyzer) {
+      this.applyAnalyzerToSearchableStrings(analyzer);
     }
     return this;
   }

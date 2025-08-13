@@ -45,7 +45,7 @@ Keep the summary structured and easy to scan.`;
       return content;
     }
 
-    const result = await response.json();
+    const result = await response.json() as any;
     return result.choices?.[0]?.message?.content || content;
   }
 

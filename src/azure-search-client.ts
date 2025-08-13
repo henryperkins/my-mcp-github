@@ -9,7 +9,7 @@ export class AzureSearchClient {
     this.apiKey = apiKey;
   }
 
-  private async request(path: string, options: RequestInit = {}) {
+  private async request(path: string, options: RequestInit = {}): Promise<any> {
     const url = `${this.endpoint}${path}${path.includes('?') ? '&' : '?'}api-version=${this.apiVersion}`;
     const response = await fetch(url, {
       ...options,
