@@ -10,17 +10,8 @@ import { withTimeout } from "./utils/timeout";
 import type { ToolContext } from "./types";
 import { ToolElicitationBuilder } from "./tool-elicitation";
 import { elicitIfNeeded, mergeElicitedParams, needsElicitation } from "./utils/elicitation-integration";
-import {
-  IndexNameSchema,
-  IndexDefinitionSchema,
-  IndexFieldSchema,
-  PaginationSchema
-} from "./schemas";
-import {
-  MAX_PAGE_SIZE,
-  DEFAULT_PAGE_SIZE,
-  DEFAULT_TIMEOUT_MS
-} from "./constants";
+import { IndexNameSchema, IndexDefinitionSchema, IndexFieldSchema, PaginationSchema } from "./schemas";
+import { MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE, DEFAULT_TIMEOUT_MS } from "./constants";
 
 /** Local validation helper to keep behavior consistent with previous implementation. */
 function validateIndexDefinition(def: any): string[] {
@@ -61,7 +52,11 @@ function validateIndexDefinition(def: any): string[] {
  */
 export function registerIndexTools(server: any, context: ToolContext) {
   const { getClient, getSummarizer } = context;
-  const rf = new ResponseFormatter(context.getSummarizer);
+  const rf = new ResponseFormatter(() => {
+    const s = context.getSummarizer?.();
+    if (!s) return null;
+    return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
+  });
 
   // ---------------- INDEX MANAGEMENT ----------------
   server.tool(
@@ -69,7 +64,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
     "List all index names with basic metadata.",
     {
       includeStats: z.boolean().optional().describe("Include document count and storage size for each index"),
-      verbose: z.boolean().optional().describe("Include full index definitions (fields, analyzers, etc.)")
+      verbose: z.boolean().optional().describe("Include full index definitions (fields, analyzers, etc.)"),
     },
     async ({ includeStats, verbose }: any) => {
       try {
@@ -87,7 +82,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
           ...(idx.defaultScoringProfile && { defaultScoringProfile: idx.defaultScoringProfile }),
           ...(idx.corsOptions && { corsEnabled: true }),
           ...(idx.semantic && { semanticSearchEnabled: true }),
-          ...(idx.vectorSearch && { vectorSearchEnabled: true })
+          ...(idx.vectorSearch && { vectorSearchEnabled: true }),
         }));
 
         if (includeStats) {
@@ -98,7 +93,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
                 const result = {
                   ...info,
                   documentCount: stats.documentCount || 0,
-                  storageSize: stats.storageSize || 0
+                  storageSize: stats.storageSize || 0,
                 };
 
                 // Add vector index size if available and non-zero
@@ -114,7 +109,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
               } catch {
                 return info;
               }
-            })
+            }),
           );
         }
 
@@ -124,7 +119,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return rf.formatError(e, { tool: "listIndexes", includeStats, verbose });
       }
     },
-    getToolHints("GET")
+    getToolHints("GET"),
   );
 
   server.tool(
@@ -140,7 +135,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return rf.formatError(e, { tool: "getIndex", indexName });
       }
     },
-    getToolHints("GET")
+    getToolHints("GET"),
   );
 
   server.tool(
@@ -157,14 +152,13 @@ export function registerIndexTools(server: any, context: ToolContext) {
           // Fetch index definition to check for vector fields
           try {
             const indexDef = await client.getIndex(indexName);
-            const hasVectorFields = indexDef.fields?.some((f: any) =>
-              f.type === 'Collection(Edm.Single)' ||
-              f.type === 'Edm.Vector' ||
-              (f.dimensions && f.dimensions > 0)
+            const hasVectorFields = indexDef.fields?.some(
+              (f: any) => f.type === "Collection(Edm.Single)" || f.type === "Edm.Vector" || (f.dimensions && f.dimensions > 0),
             );
 
             if (hasVectorFields) {
-              stats.note = "Vector fields detected but vectorIndexSize shows 0. This may indicate vectors are not yet indexed or the API doesn't report vector storage separately.";
+              stats.note =
+                "Vector fields detected but vectorIndexSize shows 0. This may indicate vectors are not yet indexed or the API doesn't report vector storage separately.";
               stats.vectorFieldsPresent = true;
             }
           } catch {
@@ -177,7 +171,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return rf.formatError(e, { tool: "getIndexStats", indexName });
       }
     },
-    getToolHints("GET")
+    getToolHints("GET"),
   );
 
   server.tool(
@@ -211,7 +205,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return rf.formatError(e, { tool: "deleteIndex", indexName });
       }
     },
-    getToolHints("DELETE")
+    getToolHints("DELETE"),
   );
 
   server.tool(
@@ -222,20 +216,14 @@ export function registerIndexTools(server: any, context: ToolContext) {
         .enum(["custom", "documentSearch", "productCatalog", "hybridSearch", "knowledgeBase"])
         .optional()
         .describe("Use a pre-built template for common scenarios"),
-      indexName: z
-        .string()
-        .optional()
-        .describe("Index name (lowercase letters, numbers, hyphens only, max 128 chars)"),
-      cloneFrom: z
-        .string()
-        .optional()
-        .describe("Clone structure from an existing index (copies schema but not data)"),
+      indexName: z.string().optional().describe("Index name (lowercase letters, numbers, hyphens only, max 128 chars)"),
+      cloneFrom: z.string().optional().describe("Clone structure from an existing index (copies schema but not data)"),
       vectorDimensions: z.number().optional().describe("Vector dimensions for hybrid search template (default: 1536)"),
       language: z
         .string()
         .optional()
         .describe(
-          "Language for text analysis: english, spanish, french, german, italian, portuguese, japanese, chinese, korean, arabic, etc."
+          "Language for text analysis: english, spanish, french, german, italian, portuguese, japanese, chinese, korean, arabic, etc.",
         ),
       validate: z.boolean().optional().default(true).describe("Validate index definition before creation"),
       indexDefinition: z
@@ -252,10 +240,10 @@ export function registerIndexTools(server: any, context: ToolContext) {
           corsOptions: z.any().optional(),
           encryptionKey: z.any().optional(),
           semantic: z.any().optional(),
-          vectorSearch: z.any().optional()
+          vectorSearch: z.any().optional(),
         })
         .optional()
-        .describe("Custom index definition (required if template is 'custom' or not specified)")
+        .describe("Custom index definition (required if template is 'custom' or not specified)"),
     },
     async ({ template, indexName, cloneFrom, vectorDimensions, language, validate, indexDefinition }: any) => {
       try {
@@ -352,17 +340,14 @@ export function registerIndexTools(server: any, context: ToolContext) {
           }
         }
 
-        return rf.executeWithTimeout(
-          client.createIndex(finalDefinition),
-          DEFAULT_TIMEOUT_MS,
-          "createIndex",
-          { indexName: finalDefinition.name }
-        );
+        return rf.executeWithTimeout(client.createIndex(finalDefinition), DEFAULT_TIMEOUT_MS, "createIndex", {
+          indexName: finalDefinition.name,
+        });
       } catch (e) {
         return rf.formatError(e, { tool: "createIndex" });
       }
     },
-    getToolHints("POST")
+    getToolHints("POST"),
   );
 
   server.tool(
@@ -379,8 +364,8 @@ export function registerIndexTools(server: any, context: ToolContext) {
             filterable: z.boolean().optional(),
             sortable: z.boolean().optional(),
             facetable: z.boolean().optional(),
-            analyzer: z.string().optional()
-          })
+            analyzer: z.string().optional(),
+          }),
         )
         .optional()
         .describe("Fields to add to existing index"),
@@ -388,16 +373,12 @@ export function registerIndexTools(server: any, context: ToolContext) {
         .object({
           titleField: z.string(),
           contentFields: z.array(z.string()),
-          keywordFields: z.array(z.string()).optional()
+          keywordFields: z.array(z.string()).optional(),
         })
         .optional()
         .describe("Update semantic search configuration"),
       validate: z.boolean().optional().default(true),
-      mergeWithExisting: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Merge with existing definition or replace"),
+      mergeWithExisting: z.boolean().optional().default(true).describe("Merge with existing definition or replace"),
       indexDefinition: z
         .object({
           name: z.string(),
@@ -413,9 +394,9 @@ export function registerIndexTools(server: any, context: ToolContext) {
           encryptionKey: z.any().optional(),
           semantic: z.any().optional(),
           vectorSearch: z.any().optional(),
-          "@odata.etag": z.string().optional()
+          "@odata.etag": z.string().optional(),
         })
-        .optional()
+        .optional(),
     },
     async ({ indexName, addFields, updateSemanticConfig, validate, mergeWithExisting, indexDefinition }: any) => {
       try {
@@ -425,11 +406,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
 
         if (mergeWithExisting || addFields || updateSemanticConfig) {
           // Fetch with timeout to prevent hanging
-          const existingIndex: any = await withTimeout(
-            client.getIndex(indexName),
-            DEFAULT_TIMEOUT_MS,
-            `getIndex:${indexName}`
-          );
+          const existingIndex: any = await withTimeout(client.getIndex(indexName), DEFAULT_TIMEOUT_MS, `getIndex:${indexName}`);
 
           // Preserve ETag for optimistic concurrency control
           etag = existingIndex["@odata.etag"];
@@ -442,7 +419,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
                 finalDefinition.fields.push({
                   ...nf,
                   retrievable: true,
-                  stored: true
+                  stored: true,
                 });
               }
             }
@@ -457,11 +434,11 @@ export function registerIndexTools(server: any, context: ToolContext) {
                     titleField: { fieldName: updateSemanticConfig.titleField },
                     prioritizedContentFields: updateSemanticConfig.contentFields.map((f: string) => ({ fieldName: f })),
                     ...(updateSemanticConfig.keywordFields && {
-                      prioritizedKeywordsFields: updateSemanticConfig.keywordFields.map((f: string) => ({ fieldName: f }))
-                    })
-                  }
-                }
-              ]
+                      prioritizedKeywordsFields: updateSemanticConfig.keywordFields.map((f: string) => ({ fieldName: f })),
+                    }),
+                  },
+                },
+              ],
             };
           }
 
@@ -488,7 +465,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
             const existingIndex: any = await withTimeout(
               client.getIndex(indexName).catch(() => null),
               DEFAULT_TIMEOUT_MS,
-              `getIndex:${indexName}:validation`
+              `getIndex:${indexName}:validation`,
             );
             if (existingIndex) {
               const existingNames = new Set(existingIndex.fields.map((f: any) => f.name));
@@ -507,17 +484,14 @@ export function registerIndexTools(server: any, context: ToolContext) {
           }
         }
 
-        return rf.executeWithTimeout(
-          client.createOrUpdateIndex(indexName, finalDefinition),
-          DEFAULT_TIMEOUT_MS,
-          "createOrUpdateIndex",
-          { indexName }
-        );
+        return rf.executeWithTimeout(client.createOrUpdateIndex(indexName, finalDefinition), DEFAULT_TIMEOUT_MS, "createOrUpdateIndex", {
+          indexName,
+        });
       } catch (e) {
         return rf.formatError(e, { tool: "createOrUpdateIndex", indexName });
       }
     },
-    getToolHints("PUT")
+    getToolHints("PUT"),
   );
 
   const ListIndexesPaginatedSchema = z.object({
@@ -535,11 +509,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         const client = context.getClient();
 
         // Fetch indexes with timeout
-        const all = await withTimeout(
-          client.listIndexes(),
-          DEFAULT_TIMEOUT_MS,
-          "listIndexes"
-        );
+        const all = await withTimeout(client.listIndexes(), DEFAULT_TIMEOUT_MS, "listIndexes");
 
         // Use efficient pagination utility
         const paginatedResult = paginateArray(all, { pageSize, cursor });
@@ -556,6 +526,6 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return rf.formatError(e, { tool: "listIndexesPaginated", cursor, pageSize });
       }
     },
-    getToolHints("GET")
+    getToolHints("GET"),
   );
 }

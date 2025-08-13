@@ -5,13 +5,7 @@ import getToolHints from "./utils/toolHints";
 import { ToolElicitationBuilder } from "./tool-elicitation";
 import { elicitIfNeeded } from "./utils/elicitation-integration";
 import type { ToolContext } from "./types";
-import {
-  SearchParamsSchema,
-  IndexNameSchema,
-  DocumentKeySchema,
-  DocumentBatchSchema,
-  SearchResultsSchema
-} from "./schemas";
+import { SearchParamsSchema, IndexNameSchema, DocumentKeySchema, DocumentBatchSchema, SearchResultsSchema } from "./schemas";
 import { DEFAULT_TIMEOUT_MS } from "./constants";
 
 /**
@@ -22,7 +16,11 @@ import { DEFAULT_TIMEOUT_MS } from "./constants";
  */
 export function registerDocumentTools(server: any, context: ToolContext) {
   const { getClient, getSummarizer } = context;
-  const rf = new ResponseFormatter(getSummarizer);
+  const rf = new ResponseFormatter(() => {
+    const s = context.getSummarizer?.();
+    if (!s) return null;
+    return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
+  });
 
   server.tool(
     "searchDocuments",
@@ -51,23 +49,23 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         ...(filter && { filter }),
         // Azure Search expects 'orderby' (no $) in POST body
         ...(orderBy && { orderby: orderBy }),
-        ...(includeTotalCount && { count: true })
+        ...(includeTotalCount && { count: true }),
       };
 
       const exec = rf.createToolExecutor<typeof params>("searchDocuments", DEFAULT_TIMEOUT_MS);
       return exec(
         { indexName, search, top, skip, select, filter, orderBy, includeTotalCount } as any,
         () => client.searchDocuments(indexName, body),
-        { tool: "searchDocuments", indexName, ...body }
+        { tool: "searchDocuments", indexName, ...body },
       );
     },
-    { ...getToolHints("POST"), outputSchema: SearchResultsSchema }
+    { ...getToolHints("POST"), outputSchema: SearchResultsSchema },
   );
 
   const GetDocumentSchema = z.object({
     indexName: IndexNameSchema,
     key: DocumentKeySchema.transform(String),
-    select: z.array(z.string()).optional()
+    select: z.array(z.string()).optional(),
   });
 
   server.tool(
@@ -80,7 +78,7 @@ export function registerDocumentTools(server: any, context: ToolContext) {
       const exec = rf.createToolExecutor<typeof params>("getDocument", DEFAULT_TIMEOUT_MS);
       return exec(params, (p) => client.getDocument(p.indexName, p.key, p.select), { tool: "getDocument", indexName, key });
     },
-    getToolHints("GET")
+    getToolHints("GET"),
   );
 
   server.tool(
@@ -96,16 +94,16 @@ export function registerDocumentTools(server: any, context: ToolContext) {
           const count = await client.getDocumentCount(p.indexName);
           return { count };
         },
-        { tool: "countDocuments", indexName }
+        { tool: "countDocuments", indexName },
       );
     },
-    { ...getToolHints("GET"), outputSchema: z.object({ count: z.number() }) }
+    { ...getToolHints("GET"), outputSchema: z.object({ count: z.number() }) },
   );
 
   // ---------------- DOCUMENT OPERATIONS ----------------
   const UploadDocumentsSchema = z.object({
     indexName: IndexNameSchema,
-    documents: DocumentBatchSchema.describe("Array of documents to upload")
+    documents: DocumentBatchSchema.describe("Array of documents to upload"),
   });
 
   server.tool(
@@ -125,18 +123,18 @@ export function registerDocumentTools(server: any, context: ToolContext) {
       }
 
       const exec = rf.createToolExecutor<typeof params>("uploadDocuments", DEFAULT_TIMEOUT_MS);
-      return exec(
-        { indexName, documents } as any,
-        () => client.uploadDocuments(indexName, documents),
-        { tool: "uploadDocuments", indexName, documentCount: documents?.length }
-      );
+      return exec({ indexName, documents } as any, () => client.uploadDocuments(indexName, documents), {
+        tool: "uploadDocuments",
+        indexName,
+        documentCount: documents?.length,
+      });
     },
-    getToolHints("POST")
+    getToolHints("POST"),
   );
 
   const MergeDocumentsSchema = z.object({
     indexName: IndexNameSchema,
-    documents: DocumentBatchSchema.describe("Array of documents to merge")
+    documents: DocumentBatchSchema.describe("Array of documents to merge"),
   });
 
   server.tool(
@@ -147,14 +145,18 @@ export function registerDocumentTools(server: any, context: ToolContext) {
       const { indexName, documents } = params;
       const client = getClient();
       const exec = rf.createToolExecutor<typeof params>("mergeDocuments", DEFAULT_TIMEOUT_MS);
-      return exec(params, (p) => client.mergeDocuments(p.indexName, p.documents), { tool: "mergeDocuments", indexName, documentCount: documents?.length });
+      return exec(params, (p) => client.mergeDocuments(p.indexName, p.documents), {
+        tool: "mergeDocuments",
+        indexName,
+        documentCount: documents?.length,
+      });
     },
-    getToolHints("POST")
+    getToolHints("POST"),
   );
 
   const MergeOrUploadDocumentsSchema = z.object({
     indexName: IndexNameSchema,
-    documents: DocumentBatchSchema.describe("Array of documents to merge or upload")
+    documents: DocumentBatchSchema.describe("Array of documents to merge or upload"),
   });
 
   server.tool(
@@ -165,16 +167,21 @@ export function registerDocumentTools(server: any, context: ToolContext) {
       const { indexName, documents } = params;
       const client = getClient();
       const exec = rf.createToolExecutor<typeof params>("mergeOrUploadDocuments", DEFAULT_TIMEOUT_MS);
-      return exec(params, (p) => client.mergeOrUploadDocuments(p.indexName, p.documents), { tool: "mergeOrUploadDocuments", indexName, documentCount: documents?.length });
+      return exec(params, (p) => client.mergeOrUploadDocuments(p.indexName, p.documents), {
+        tool: "mergeOrUploadDocuments",
+        indexName,
+        documentCount: documents?.length,
+      });
     },
-    getToolHints("POST")
+    getToolHints("POST"),
   );
 
   const DeleteDocumentsSchema = z.object({
     indexName: IndexNameSchema,
-    keys: z.array(DocumentKeySchema.transform(String))
+    keys: z
+      .array(DocumentKeySchema.transform(String))
       .min(1, "At least one key must be provided")
-      .describe("Array of document keys to delete")
+      .describe("Array of document keys to delete"),
   });
 
   server.tool(
@@ -185,8 +192,12 @@ export function registerDocumentTools(server: any, context: ToolContext) {
       const { indexName, keys } = params;
       const client = getClient();
       const exec = rf.createToolExecutor<typeof params>("deleteDocuments", DEFAULT_TIMEOUT_MS);
-      return exec(params, (p) => client.deleteDocuments(p.indexName, p.keys), { tool: "deleteDocuments", indexName, keyCount: keys?.length });
+      return exec(params, (p) => client.deleteDocuments(p.indexName, p.keys), {
+        tool: "deleteDocuments",
+        indexName,
+        keyCount: keys?.length,
+      });
     },
-    getToolHints("DELETE")
+    getToolHints("DELETE"),
   );
 }

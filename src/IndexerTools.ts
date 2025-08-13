@@ -1,8 +1,9 @@
 // src/IndexerTools.ts
 import { z } from "zod";
-import { formatResponse, formatToolError, normalizeError } from "./utils/response";
+import { ResponseFormatter } from "./utils/response-helper";
 import getToolHints from "./utils/toolHints";
 import type { ToolContext } from "./types";
+import { DEFAULT_TIMEOUT_MS } from "./constants";
 
 // Elicitation schema for Blob indexer creation/update
 function buildSchemaForBlobIndexer() {
@@ -16,38 +17,38 @@ function buildSchemaForBlobIndexer() {
         type: "string",
         title: "Schedule interval",
         description: "ISO-8601 duration (e.g., PT2H)",
-        default: "PT2H"
+        default: "PT2H",
       },
       runNow: { type: "boolean", title: "Run immediately", default: false },
       parsingMode: {
         type: "string",
         title: "Parsing mode",
         enum: ["default", "jsonArray", "delimitedText", "lineSeparated"],
-        default: "default"
+        default: "default",
       },
       indexedFileNameExtensions: {
         type: "string",
         title: "Indexed file extensions",
-        default: ".md,.ts,.js,.json,.yml,.yaml,.txt"
+        default: ".md,.ts,.js,.json,.yml,.yaml,.txt",
       },
       excludedFileNameExtensions: {
         type: "string",
         title: "Excluded file extensions",
-        default: ".png,.jpg,.gif,.svg,.ico"
+        default: ".png,.jpg,.gif,.svg,.ico",
       },
       dataToExtract: {
         type: "string",
         title: "Data to extract",
         enum: ["contentOnly", "contentAndMetadata", "storageMetadata"],
-        default: "contentAndMetadata"
+        default: "contentAndMetadata",
       },
       indexStorageMetadataOnlyForOversizedDocuments: {
         type: "boolean",
         title: "Index only metadata for oversized docs",
-        default: true
-      }
+        default: true,
+      },
     },
-    required: ["name", "dataSourceName", "targetIndexName"]
+    required: ["name", "dataSourceName", "targetIndexName"],
   };
 }
 
@@ -60,118 +61,78 @@ function buildSchemaForBlobIndexer() {
  *  - createOrUpdateBlobIndexer
  */
 export function registerIndexerTools(server: any, context: ToolContext) {
-  const { getClient, getSummarizer } = context;
+  const { getClient } = context;
+  const rf = new ResponseFormatter(() => {
+    const s = context.getSummarizer?.();
+    if (!s) return null;
+    return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
+  });
   // ---------------- INDEXERS ----------------
-  server.tool(
-    "listIndexers",
-    "List indexer names.",
-    {},
-    async () => {
-      try {
-        const client = getClient();
-        const indexers = await client.listIndexers();
+  server.tool("listIndexers", "List indexer names.", {}, async () => {
+    const client = getClient();
+    return rf.executeWithTimeout(
+      client.listIndexers().then((indexers: any[]) => {
         const names = indexers.map((ix: any) => ix.name);
-        const structuredData = { indexers: names, count: names.length };
-        return await formatResponse(structuredData, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: structuredData
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "listIndexers" });
-        return formatToolError(insight);
-      }
-    }
-  );
+        return { indexers: names, count: names.length };
+      }),
+      DEFAULT_TIMEOUT_MS,
+      "listIndexers",
+      { tool: "listIndexers" },
+    );
+  });
 
-  server.tool(
-    "getIndexer",
-    "Get an indexer.",
-    { name: z.string() },
-    async ({ name }: any) => {
-      try {
-        const client = getClient();
-        const ix = await client.getIndexer(name);
-        return await formatResponse(ix, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: ix
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "getIndexer", name });
-        return formatToolError(insight);
-      }
-    }
-  );
+  server.tool("getIndexer", "Get an indexer.", { name: z.string() }, async ({ name }: any) => {
+    const client = getClient();
+    return rf.executeWithTimeout(client.getIndexer(name), DEFAULT_TIMEOUT_MS, "getIndexer", { tool: "getIndexer", name });
+  });
 
-  server.tool(
-    "runIndexer",
-    "Run an indexer now.",
-    { name: z.string() },
-    async ({ name }: any) => {
-      try {
-        const client = getClient();
-        await client.runIndexer(name);
-        return await formatResponse({ success: true, message: `Indexer ${name} started` });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "runIndexer", name });
-        return formatToolError(insight);
-      }
+  server.tool("runIndexer", "Run an indexer now.", { name: z.string() }, async ({ name }: any) => {
+    try {
+      const client = getClient();
+      await rf.executeWithTimeout(client.runIndexer(name), DEFAULT_TIMEOUT_MS, "runIndexer", { tool: "runIndexer", name });
+      return rf.formatSuccess({ success: true, message: `Indexer ${name} started` });
+    } catch (e) {
+      return rf.formatError(e, { tool: "runIndexer", name });
     }
-  );
+  });
 
-  server.tool(
-    "resetIndexer",
-    "Reset change tracking for an indexer (full re-crawl).",
-    { name: z.string() },
-    async ({ name }: any) => {
-      try {
-        const client = getClient();
-        await client.resetIndexer(name);
-        return await formatResponse({ success: true, message: `Indexer ${name} reset` });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "resetIndexer", name });
-        return formatToolError(insight);
-      }
+  server.tool("resetIndexer", "Reset change tracking for an indexer (full re-crawl).", { name: z.string() }, async ({ name }: any) => {
+    try {
+      const client = getClient();
+      await rf.executeWithTimeout(client.resetIndexer(name), DEFAULT_TIMEOUT_MS, "resetIndexer", { tool: "resetIndexer", name });
+      return rf.formatSuccess({ success: true, message: `Indexer ${name} reset` });
+    } catch (e) {
+      return rf.formatError(e, { tool: "resetIndexer", name });
     }
-  );
+  });
 
   server.tool(
     "getIndexerStatus",
     "Get execution history/status for an indexer.",
     {
       name: z.string(),
-      historyLimit: z
-        .number()
-        .int()
-        .positive()
-        .max(50)
-        .default(5)
-        .describe("Limit execution history entries")
+      historyLimit: z.number().int().positive().max(50).default(5).describe("Limit execution history entries"),
     },
     async ({ name, historyLimit }: any) => {
-      try {
-        const client = getClient();
-        const status: any = await client.getIndexerStatus(name);
-
-        // Limit execution history to prevent large responses
-        if (status.executionHistory && Array.isArray(status.executionHistory)) {
-          status.executionHistory = status.executionHistory.slice(0, historyLimit);
-          if (status.executionHistory.length < historyLimit) {
-            status.historyComplete = true;
-          } else {
-            status.historyTruncated = true;
-            status.message = `Showing first ${historyLimit} execution history entries. Increase historyLimit to see more.`;
+      const client = getClient();
+      return rf.executeWithTimeout(
+        client.getIndexerStatus(name).then((status: any) => {
+          if (status.executionHistory && Array.isArray(status.executionHistory)) {
+            status.executionHistory = status.executionHistory.slice(0, historyLimit);
+            if (status.executionHistory.length < historyLimit) {
+              status.historyComplete = true;
+            } else {
+              status.historyTruncated = true;
+              status.message = `Showing first ${historyLimit} execution history entries. Increase historyLimit to see more.`;
+            }
           }
-        }
-
-        return await formatResponse(status, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: status
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "getIndexerStatus", name, historyLimit });
-        return formatToolError(insight);
-      }
-    }
+          return status;
+        }),
+        DEFAULT_TIMEOUT_MS,
+        "getIndexerStatus",
+        { tool: "getIndexerStatus", name, historyLimit },
+      );
+    },
   );
 
   // NEW: Create or update a Blob indexer pointing to the given data source and index
@@ -180,31 +141,16 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     "Create or update an indexer for Azure Blob data source to a target index. Optionally run immediately.",
     {
       name: z.string().describe("Indexer name"),
-      dataSourceName: z
-        .string()
-        .describe("Existing data source connection name (e.g. from createOrUpdateBlobDataSource)"),
+      dataSourceName: z.string().describe("Existing data source connection name (e.g. from createOrUpdateBlobDataSource)"),
       targetIndexName: z.string().describe("Target search index name"),
-      scheduleInterval: z
-        .string()
-        .optional()
-        .default("PT2H")
-        .describe("ISO-8601 duration (e.g., PT2H)"),
+      scheduleInterval: z.string().optional().default("PT2H").describe("ISO-8601 duration (e.g., PT2H)"),
       runNow: z.boolean().optional().default(false),
       // Basic knobs for file parsing; defaults mirror your shell script
-      parsingMode: z
-        .enum(["default", "jsonArray", "delimitedText", "lineSeparated"])
-        .optional()
-        .default("default"),
-      indexedFileNameExtensions: z
-        .string()
-        .optional()
-        .default(".md,.ts,.js,.json,.yml,.yaml,.txt"),
+      parsingMode: z.enum(["default", "jsonArray", "delimitedText", "lineSeparated"]).optional().default("default"),
+      indexedFileNameExtensions: z.string().optional().default(".md,.ts,.js,.json,.yml,.yaml,.txt"),
       excludedFileNameExtensions: z.string().optional().default(".png,.jpg,.gif,.svg,.ico"),
-      dataToExtract: z
-        .enum(["contentOnly", "contentAndMetadata", "storageMetadata"])
-        .optional()
-        .default("contentAndMetadata"),
-      indexStorageMetadataOnlyForOversizedDocuments: z.boolean().optional().default(true)
+      dataToExtract: z.enum(["contentOnly", "contentAndMetadata", "storageMetadata"]).optional().default("contentAndMetadata"),
+      indexStorageMetadataOnlyForOversizedDocuments: z.boolean().optional().default(true),
     },
     async ({
       name,
@@ -216,7 +162,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
       indexedFileNameExtensions,
       excludedFileNameExtensions,
       dataToExtract,
-      indexStorageMetadataOnlyForOversizedDocuments
+      indexStorageMetadataOnlyForOversizedDocuments,
     }: any) => {
       try {
         const client = getClient();
@@ -238,7 +184,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
             const requestedSchema = buildSchemaForBlobIndexer();
             const elicited = await (server as any).server.elicitInput({
               message: "Let's set up a Blob indexer. I can collect the required details.",
-              requestedSchema
+              requestedSchema,
             });
             const a: any = (elicited as any)?.content ?? elicited ?? {};
             __name = __name || a.name;
@@ -259,13 +205,12 @@ export function registerIndexerTools(server: any, context: ToolContext) {
 
         if (!__name || !__dataSourceName || !__targetIndexName) {
           const error = new Error("Missing required parameters: name, dataSourceName, targetIndexName.");
-          const { insight } = normalizeError(error, {
+          return rf.formatError(error, {
             tool: "createOrUpdateBlobIndexer",
             name: __name,
             dataSourceName: __dataSourceName,
-            targetIndexName: __targetIndexName
+            targetIndexName: __targetIndexName,
           });
-          return formatToolError(insight);
         }
 
         const indexerDefinition = {
@@ -279,64 +224,68 @@ export function registerIndexerTools(server: any, context: ToolContext) {
               indexedFileNameExtensions: __indexedFileNameExtensions,
               excludedFileNameExtensions: __excludedFileNameExtensions,
               dataToExtract: __dataToExtract,
-              indexStorageMetadataOnlyForOversizedDocuments: __indexStorageMetadataOnlyForOversizedDocuments
+              indexStorageMetadataOnlyForOversizedDocuments: __indexStorageMetadataOnlyForOversizedDocuments,
             },
             batchSize: 10,
             maxFailedItems: 10,
-            maxFailedItemsPerBatch: 5
+            maxFailedItemsPerBatch: 5,
           },
           // These mappings assume a typical index: title, content, source, lastModified
           fieldMappings: [
             {
               sourceFieldName: "metadata_storage_name",
               targetFieldName: "title",
-              mappingFunction: null
+              mappingFunction: null,
             },
             { sourceFieldName: "content", targetFieldName: "content", mappingFunction: null },
             {
               sourceFieldName: "metadata_storage_path",
               targetFieldName: "source",
-              mappingFunction: null
+              mappingFunction: null,
             },
             {
               sourceFieldName: "metadata_storage_last_modified",
               targetFieldName: "lastModified",
-              mappingFunction: null
-            }
+              mappingFunction: null,
+            },
           ],
           outputFieldMappings: [],
-          description: `Indexer for '${__dataSourceName}' to '${__targetIndexName}'`
+          description: `Indexer for '${__dataSourceName}' to '${__targetIndexName}'`,
         };
 
-        const created = await client.createOrUpdateIndexer(__name, indexerDefinition);
-        if (__runNow) {
-          try {
-            await client.runIndexer(__name);
-          } catch (runErr) {
-            // Return indexer details even if run fails
-            return await formatResponse({
-              success: false,
-              message: `Indexer created/updated, but run failed: ${String(runErr)}`,
-              indexer: created
-            });
-          }
-        }
-
-        return await formatResponse({
-          success: true,
-          message: `Indexer '${__name}' created/updated${__runNow ? " and started" : ""}.`,
-          indexer: created
-        });
+        return rf.executeWithTimeout(
+          (async () => {
+            const created = await client.createOrUpdateIndexer(__name, indexerDefinition);
+            if (__runNow) {
+              try {
+                await client.runIndexer(__name);
+              } catch (runErr) {
+                return {
+                  success: false,
+                  message: `Indexer created/updated, but run failed: ${String(runErr)}`,
+                  indexer: created,
+                };
+              }
+            }
+            return {
+              success: true,
+              message: `Indexer '${__name}' created/updated${__runNow ? " and started" : ""}.`,
+              indexer: created,
+            };
+          })(),
+          DEFAULT_TIMEOUT_MS,
+          "createOrUpdateBlobIndexer",
+          { tool: "createOrUpdateBlobIndexer", name: __name, dataSourceName: __dataSourceName, targetIndexName: __targetIndexName },
+        );
       } catch (e) {
-        const { insight } = normalizeError(e, {
+        return rf.formatError(e, {
           tool: "createOrUpdateBlobIndexer",
           name,
           dataSourceName,
-          targetIndexName
+          targetIndexName,
         });
-        return formatToolError(insight);
       }
-    }
+    },
   );
 
   // Progress-emitting run
@@ -352,17 +301,12 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     async ({ indexerName, clientRequestId, pollSeconds, maxAttempts }: any) => {
       try {
         const c = getClient();
-        // Note: clientRequestId could be used for tracking but isn't supported in simplified client
         await c.runIndexer(indexerName);
-        // await server.notification("progress", {
-        //   operation: `indexer:${indexerName}`,
-        //   progress: 0.1,
-        //   message: "started",
-        // });
 
-        let done = false, attempts = 0;
+        let done = false,
+          attempts = 0;
         while (!done && attempts++ < maxAttempts) {
-          await new Promise(r => setTimeout(r, (pollSeconds ?? 5) * 1000));
+          await new Promise((r) => setTimeout(r, (pollSeconds ?? 5) * 1000));
           const s = await c.getIndexerStatus(indexerName);
           const lr = s?.lastResult;
           const status = lr?.status ?? "unknown";
@@ -370,29 +314,26 @@ export function registerIndexerTools(server: any, context: ToolContext) {
           const itemsFailed = lr?.itemsFailed ?? lr?.failedItemCount ?? 0;
           const denom = Math.max(1, itemsProcessed + itemsFailed);
           const pct =
-            status === "success" ? 1 :
-            status === "inProgress" ? Math.min(0.9, itemsProcessed / denom) :
-            status === "transientFailure" ? 0 :
-            0.1;
-          // await server.notification("progress", {
-          //   operation: `indexer:${indexerName}`,
-          //   progress: pct,
-          //   message: status,
-          // });
+            status === "success"
+              ? 1
+              : status === "inProgress"
+                ? Math.min(0.9, itemsProcessed / denom)
+                : status === "transientFailure"
+                  ? 0
+                  : 0.1;
           done = status === "success" || status === "transientFailure";
         }
         const finalStatus = await c.getIndexerStatus(indexerName);
-        return await formatResponse({
+        return rf.formatSuccess({
           indexerName,
           status: finalStatus?.lastResult?.status ?? "unknown",
           documentsProcessed: finalStatus?.lastResult?.itemsProcessed ?? finalStatus?.lastResult?.itemCount ?? 0,
           clientRequestId,
         });
       } catch (e) {
-        const { insight } = normalizeError(e, { tool: "runIndexerWithProgress", indexerName });
-        return formatToolError(insight);
+        return rf.formatError(e, { tool: "runIndexerWithProgress", indexerName });
       }
     },
-    getToolHints("POST")
+    getToolHints("POST"),
   );
 }

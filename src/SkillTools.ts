@@ -1,6 +1,7 @@
 // src/SkillTools.ts
 import { z } from "zod";
-import { formatResponse, formatToolError, normalizeError } from "./utils/response";
+import { ResponseFormatter } from "./utils/response-helper";
+import { DEFAULT_TIMEOUT_MS } from "./constants";
 import type { ToolContext } from "./types";
 
 /**
@@ -10,45 +11,25 @@ import type { ToolContext } from "./types";
  *  - getSkillset
  */
 export function registerSkillTools(server: any, context: ToolContext) {
-  const { getClient, getSummarizer } = context;
-  // ---------------- SKILLSETS ----------------
-  server.tool(
-    "listSkillsets",
-    "List skillset names.",
-    {},
-    async () => {
-      try {
-        const client = getClient();
-        const skillsets = await client.listSkillsets();
-        const names = skillsets.map((ss: any) => ss.name);
-        const structuredData = { skillsets: names, count: names.length };
-        return await formatResponse(structuredData, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: structuredData
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "listSkillsets" });
-        return formatToolError(insight);
-      }
-    }
-  );
+  const { getClient } = context;
+  const rf = new ResponseFormatter(() => {
+    const s = context.getSummarizer?.();
+    if (!s) return null;
+    return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
+  });
 
-  server.tool(
-    "getSkillset",
-    "Get a skillset.",
-    { name: z.string() },
-    async ({ name }: any) => {
-      try {
-        const client = getClient();
-        const ss = await client.getSkillset(name);
-        return await formatResponse(ss, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: ss
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "getSkillset", name });
-        return formatToolError(insight);
-      }
-    }
-  );
+  // ---------------- SKILLSETS ----------------
+  server.tool("listSkillsets", "List skillset names.", {}, async () => {
+    // Fetch skillsets and structure the response
+    const client = getClient();
+    const skillsets = await client.listSkillsets();
+    const names = skillsets.map((ss: any) => ss.name);
+    const structuredData = { skillsets: names, count: names.length };
+
+    return rf.formatSuccess(structuredData);
+  });
+
+  server.tool("getSkillset", "Get a skillset.", { name: z.string() }, async ({ name }: { name: string }) => {
+    return rf.executeWithTimeout(getClient().getSkillset(name), DEFAULT_TIMEOUT_MS, "getSkillset", { tool: "getSkillset", name });
+  });
 }

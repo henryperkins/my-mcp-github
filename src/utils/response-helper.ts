@@ -12,9 +12,7 @@ export interface ResponseFormatterOptions {
  * Standard response formatter for all tool operations
  */
 export class ResponseFormatter {
-  constructor(
-    private readonly getSummarizer?: () => ((text: string, maxTokens?: number) => Promise<string>) | null
-  ) {}
+  constructor(private readonly getSummarizer?: () => ((text: string, maxTokens?: number) => Promise<string>) | null) {}
 
   /**
    * Format a successful response
@@ -23,7 +21,7 @@ export class ResponseFormatter {
     const summarizer = options?.summarizer ?? this.getSummarizer?.() ?? undefined;
     return formatResponse(result, {
       summarizer,
-      structuredContent: options?.structuredContent ?? result
+      structuredContent: options?.structuredContent ?? result,
     });
   }
 
@@ -42,7 +40,7 @@ export class ResponseFormatter {
     operation: Promise<T>,
     timeoutMs: number = DEFAULT_TIMEOUT_MS,
     operationName: string,
-    errorContext: Record<string, any>
+    errorContext: Record<string, any>,
   ): Promise<any> {
     try {
       const result = await withTimeout(operation, timeoutMs, operationName);
@@ -55,27 +53,16 @@ export class ResponseFormatter {
   /**
    * Create a standard tool executor with timeout and error handling
    */
-  createToolExecutor<TParams>(
-    toolName: string,
-    timeoutMs: number = DEFAULT_TIMEOUT_MS
-  ) {
-    return async (
-      params: TParams,
-      operation: (params: TParams) => Promise<any>,
-      additionalContext?: Record<string, any>
-    ): Promise<any> => {
+  createToolExecutor<TParams>(toolName: string, timeoutMs: number = DEFAULT_TIMEOUT_MS) {
+    return async (params: TParams, operation: (params: TParams) => Promise<any>, additionalContext?: Record<string, any>): Promise<any> => {
       const errorContext = {
         tool: toolName,
         ...params,
-        ...additionalContext
+        ...additionalContext,
       };
 
       try {
-        const result = await withTimeout(
-          operation(params),
-          timeoutMs,
-          toolName
-        );
+        const result = await withTimeout(operation(params), timeoutMs, toolName);
         return this.formatSuccess(result);
       } catch (error) {
         return this.formatError(error, errorContext);

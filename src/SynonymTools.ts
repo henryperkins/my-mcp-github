@@ -1,7 +1,8 @@
 // src/SynonymTools.ts
 import { z } from "zod";
-import { formatResponse, formatToolError, normalizeError } from "./utils/response";
+import { ResponseFormatter } from "./utils/response-helper";
 import type { ToolContext } from "./types";
+import { DEFAULT_TIMEOUT_MS } from "./constants";
 
 /**
  * Register synonym map management tools.
@@ -12,66 +13,46 @@ import type { ToolContext } from "./types";
  *  - deleteSynonymMap
  */
 export function registerSynonymTools(server: any, context: ToolContext) {
-  const { getClient, getSummarizer } = context;
+  const { getClient } = context;
+  const rf = new ResponseFormatter(() => {
+    const s = context.getSummarizer?.();
+    if (!s) return null;
+    return (text: string, maxTokens?: number) => s(text, maxTokens ?? 800);
+  });
   // ---------------- SYNONYM MAPS ----------------
-  server.tool(
-    "listSynonymMaps",
-    "List synonym map names.",
-    {},
-    async () => {
-      try {
-        const client = getClient();
-        const synonymMaps = await client.listSynonymMaps();
+  server.tool("listSynonymMaps", "List synonym map names.", {}, async () => {
+    const client = getClient();
+    return rf.executeWithTimeout(
+      client.listSynonymMaps().then((synonymMaps: any[]) => {
         const names = synonymMaps.map((sm: any) => sm.name);
-        const structuredData = { synonymMaps: names, count: names.length };
-        return await formatResponse(structuredData, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: structuredData
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "listSynonymMaps" });
-        return formatToolError(insight);
-      }
-    }
-  );
+        return { synonymMaps: names, count: names.length };
+      }),
+      DEFAULT_TIMEOUT_MS,
+      "listSynonymMaps",
+      { tool: "listSynonymMaps" },
+    );
+  });
 
-  server.tool(
-    "getSynonymMap",
-    "Get a synonym map definition.",
-    { name: z.string() },
-    async ({ name }: any) => {
-      try {
-        const client = getClient();
-        const sm = await client.getSynonymMap(name);
-        
-        // Format synonym rules for better readability
-        if (sm && sm.synonyms && typeof sm.synonyms === 'string') {
-          // Create a formatted version with parsed synonym rules
-          const formattedSm = {
+  server.tool("getSynonymMap", "Get a synonym map definition.", { name: z.string() }, async ({ name }: any) => {
+    const client = getClient();
+    return rf.executeWithTimeout(
+      client.getSynonymMap(name).then((sm: any) => {
+        if (sm && sm.synonyms && typeof sm.synonyms === "string") {
+          const formattedSm: any = {
             ...sm,
-            synonymsFormatted: sm.synonyms.split('\n').filter((line: string) => line.trim()),
-            synonymsRaw: sm.synonyms // Keep original for reference
+            synonymsFormatted: sm.synonyms.split("\n").filter((line: string) => line.trim()),
+            synonymsRaw: sm.synonyms,
           };
-          
-          // Replace the original synonyms with the formatted version
           formattedSm.synonyms = formattedSm.synonymsFormatted;
-          
-          return await formatResponse(formattedSm, {
-            summarizer: getSummarizer?.() || undefined,
-            structuredContent: formattedSm
-          });
+          return formattedSm;
         }
-        
-        return await formatResponse(sm, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: sm
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "getSynonymMap", name });
-        return formatToolError(insight);
-      }
-    }
-  );
+        return sm;
+      }),
+      DEFAULT_TIMEOUT_MS,
+      "getSynonymMap",
+      { tool: "getSynonymMap", name },
+    );
+  });
 
   server.tool(
     "createOrUpdateSynonymMap",
@@ -83,45 +64,30 @@ export function registerSynonymTools(server: any, context: ToolContext) {
         format: z.string().default("solr"),
         synonyms: z.string().describe("Synonym rules in Solr format"),
         encryptionKey: z.any().optional(),
-        "@odata.etag": z.string().optional()
-      })
+        "@odata.etag": z.string().optional(),
+      }),
     },
     async ({ name, synonymMapDefinition }: any) => {
-      try {
-        const client = getClient();
-        const result = await client.createOrUpdateSynonymMap(name, synonymMapDefinition);
-        return await formatResponse(result, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: result
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, {
-          tool: "createOrUpdateSynonymMap",
-          name,
-          synonymMapDefinition
-        });
-        return formatToolError(insight);
-      }
-    }
+      const client = getClient();
+      return rf.executeWithTimeout(
+        client.createOrUpdateSynonymMap(name, synonymMapDefinition),
+        DEFAULT_TIMEOUT_MS,
+        "createOrUpdateSynonymMap",
+        { tool: "createOrUpdateSynonymMap", name },
+      );
+    },
   );
 
-  server.tool(
-    "deleteSynonymMap",
-    "Delete a synonym map.",
-    { name: z.string() },
-    async ({ name }: any) => {
-      try {
-        const client = getClient();
-        await client.deleteSynonymMap(name);
-        const structuredData = { success: true, message: `Synonym map ${name} deleted` };
-        return await formatResponse(structuredData, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: structuredData
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "deleteSynonymMap", name });
-        return formatToolError(insight);
-      }
+  server.tool("deleteSynonymMap", "Delete a synonym map.", { name: z.string() }, async ({ name }: any) => {
+    try {
+      const client = getClient();
+      await rf.executeWithTimeout(client.deleteSynonymMap(name), DEFAULT_TIMEOUT_MS, "deleteSynonymMap", {
+        tool: "deleteSynonymMap",
+        name,
+      });
+      return rf.formatSuccess({ success: true, message: `Synonym map ${name} deleted` });
+    } catch (e) {
+      return rf.formatError(e, { tool: "deleteSynonymMap", name });
     }
-  );
+  });
 }
