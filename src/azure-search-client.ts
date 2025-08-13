@@ -36,11 +36,27 @@ export class AzureSearchClient {
   private async request(path: string, options: RequestInit = {}): Promise<unknown> {
     const url = `${this.endpoint}${path}${path.includes('?') ? '&' : '?'}api-version=${this.apiVersion}`;
     // Fix #8: Avoid duplicate headers by merging carefully
-    const headers: HeadersInit = {
-      ...options.headers,
-      'api-key': this.apiKey,
-      'Content-Type': 'application/json',
+    // Build headers defensively – avoid duplicates (case-insensitive) that Cloudflare
+    // treats as immutable and will throw “immutable headers”.
+    const mergedHeaders: Record<string, string> = {};
+
+    const addHeader = (k: string, v: string) => {
+      const exists = Object.keys(mergedHeaders).find(h => h.toLowerCase() === k.toLowerCase());
+      if (!exists) mergedHeaders[k] = v;
     };
+
+    // 1) Copy any existing headers from options (may include output from this.headers()).
+    if (options.headers) {
+      for (const [k, v] of Object.entries(options.headers as Record<string, string>)) {
+        if (v !== undefined && v !== null) addHeader(k, String(v));
+      }
+    }
+
+    // 2) Ensure required auth / content headers are present exactly once.
+    addHeader("api-key", this.apiKey);
+    addHeader("Content-Type", "application/json");
+
+    const headers: HeadersInit = mergedHeaders;
     
     const response = await fetch(url, {
       ...options,

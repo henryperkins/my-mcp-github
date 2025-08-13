@@ -32,12 +32,7 @@ function validateIndexDefinition(def: any): string[] {
   } else {
     // Fix #9: Validate key field properties
     const keyField = keyFields[0];
-    if (!keyField.filterable) {
-      errors.push(`Key field ${keyField.name} must be filterable`);
-    }
-    if (!keyField.sortable) {
-      errors.push(`Key field ${keyField.name} must be sortable`);
-    }
+    // Key field should remain retrievable
     if (keyField.retrievable === false) {
       errors.push(`Key field ${keyField.name} must be retrievable`);
     }

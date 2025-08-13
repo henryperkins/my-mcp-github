@@ -102,7 +102,7 @@ export class IndexBuilder {
       searchable: false,
       filterable: true,
       retrievable: true,
-      sortable: true
+      sortable: false
     });
     return this;
   }
@@ -201,7 +201,8 @@ export class IndexBuilder {
       name,
       type,
       searchable: options.searchable ?? (itemType === 'String'),
-      filterable: options.filterable ?? true,
+      // Filterable collections are only allowed for strings
+      filterable: options.filterable ?? (itemType === 'String'),
       sortable: false, // Collections cannot be sortable
       facetable: options.facetable ?? (itemType === 'String')
     });
@@ -338,6 +339,14 @@ export class IndexBuilder {
       // Validate collection fields
       if (field.type.startsWith('Collection(') && field.sortable) {
         errors.push(`Collection field ${field.name} cannot be sortable`);
+      }
+      // Prevent non-string collection fields from being filterable
+      if (
+        field.type.startsWith('Collection(') &&
+        field.filterable &&
+        field.type !== 'Collection(Edm.String)'
+      ) {
+        errors.push(`Collection field ${field.name} can be filterable only for Collection(Edm.String)`);
       }
     }
     
