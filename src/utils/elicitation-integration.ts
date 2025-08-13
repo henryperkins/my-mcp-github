@@ -6,6 +6,7 @@ import {
   ElicitationResult,
   processElicitationResponse
 } from "../tool-elicitation";
+import { log } from "./logging";
 
 /**
  * Helper to perform MCP elicitation if the server supports it
@@ -25,7 +26,7 @@ export async function elicitIfNeeded(
     serverContext?.agent?.elicitInput;
     
   if (!elicitMethod) {
-    console.debug("Server does not support elicitation (no elicitInput method found)");
+    log("debug", "Server does not support elicitation (no elicitInput method found)");
     return undefined;
   }
 
@@ -56,8 +57,8 @@ export async function elicitIfNeeded(
     return undefined;
   } catch (error) {
     // Log the error but don't fail the tool - use provided params as fallback
-    console.error("Elicitation failed:", error);
-    console.debug("Server context structure:", {
+    log("error", "Elicitation failed", { error });
+    log("debug", "Server context structure", {
       hasElicitInput: !!serverContext?.elicitInput,
       hasServerElicitInput: !!serverContext?.server?.elicitInput,
       hasAgentElicitInput: !!serverContext?.agent?.elicitInput,
