@@ -24,12 +24,8 @@ function createResourceResponse(
   return {
     contents: [{
       uri,
-      name,
-      title,
-      description,
       mimeType: "application/json",
-      text: typeof content === "string" ? content : JSON.stringify(content, null, 2),
-      ...(annotations && { annotations })
+      text: typeof content === "string" ? content : JSON.stringify(content, null, 2)
     }]
   };
 }

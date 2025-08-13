@@ -13,6 +13,7 @@ import { registerIndexerTools } from "./IndexerTools";
 import { registerSkillTools } from "./SkillTools";
 import { registerSynonymTools } from "./SynonymTools";
 import { StringBuilder } from "./utils/string-builder";
+import { setLogLevel } from "./utils/logging";
 
 // Type definitions for environment
 interface Env {
@@ -32,7 +33,7 @@ class AzureSearchMCP extends McpAgent {
       // MCP-compliant capability flags
       prompts: { listChanged: true },
       resources: { subscribe: true, listChanged: true },
-      logging: { levels: ["debug","info","warning","error"] },
+      logging: {},
       tools: { listChanged: true },
       elicitation: {}
     }
@@ -528,11 +529,10 @@ Available templates: documentSearch, productCatalog, hybridSearch, knowledgeBase
       }
     );
 
-    // (Optional) logging controls
-    // this.server.method("logging/setLevel", ({ level }: any) => {
-    //   // no-op placeholder; wire to utils/logging if desired
-    //   return { ok: true };
-    // });
+    this.server.method("logging/setLevel", ({ level }: { level: "debug" | "info" | "notice" | "warning" | "error" | "critical" | "alert" | "emergency" }) => {
+      setLogLevel(level as any);
+      return { ok: true };
+    });
   }
 }
 

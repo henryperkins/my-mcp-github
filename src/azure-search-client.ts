@@ -116,7 +116,7 @@ export class AzureSearchClient {
   }
 
   async getIndex(indexName: string): Promise<IndexDefinition | unknown> {
-    return this.request(`/indexes/${indexName}`);
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')`);
   }
 
   async createOrUpdateIndex(indexName: string, indexDefinition: IndexDefinition, etag?: string): Promise<IndexDefinition | unknown> {
@@ -125,12 +125,13 @@ export class AzureSearchClient {
     if (etag) {
       headers['If-Match'] = etag;
     }
+    headers['Prefer'] = 'return=representation';
     
     // Remove @odata.etag from body if present
     const cleanDefinition = { ...indexDefinition };
     delete cleanDefinition['@odata.etag'];
     
-    return this.request(`/indexes/${indexName}`, {
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')`, {
       method: 'PUT',
       body: JSON.stringify(cleanDefinition),
       headers,
@@ -138,18 +139,18 @@ export class AzureSearchClient {
   }
 
   async deleteIndex(indexName: string): Promise<unknown> {
-    return this.request(`/indexes/${indexName}`, {
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')`, {
       method: 'DELETE',
     });
   }
 
   async getIndexStats(indexName: string): Promise<unknown> {
-    return this.request(`/indexes/${indexName}/stats`);
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')/search.stats`);
   }
 
   // Document operations
   async searchDocuments(indexName: string, searchParams: SearchRequestBody): Promise<SearchResults> {
-    return this.request(`/indexes/${indexName}/docs/search`, {
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')/docs/search`, {
       method: 'POST',
       body: JSON.stringify(searchParams),
     }) as Promise<SearchResults>;
@@ -157,11 +158,11 @@ export class AzureSearchClient {
 
   async getDocument(indexName: string, key: string, select?: string[]): Promise<unknown> {
     const params = select ? `?$select=${select.join(',')}` : '';
-    return this.request(`/indexes/${indexName}/docs/${encodeURIComponent(key)}${params}`);
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')/docs/${encodeURIComponent(key)}${params}`);
   }
 
   async getDocumentCount(indexName: string): Promise<number> {
-    const result = (await this.request(`/indexes/${indexName}/docs/$count`)) as number;
+    const result = (await this.request(`/indexes('${encodeURIComponent(indexName)}')/docs/$count`)) as number;
     return result;
   }
 
@@ -172,18 +173,19 @@ export class AzureSearchClient {
   }
 
   async getDataSource(name: string): Promise<unknown> {
-    return this.request(`/datasources/${name}`);
+    return this.request(`/datasources('${encodeURIComponent(name)}')`);
   }
 
   async createOrUpdateDataSource(name: string, dataSourceDefinition: DataSource): Promise<DataSource | unknown> {
-    return this.request(`/datasources/${name}`, {
+    return this.request(`/datasources('${encodeURIComponent(name)}')`, {
       method: 'PUT',
       body: JSON.stringify(dataSourceDefinition),
+      headers: this.headers({ Prefer: "return=representation" }),
     });
   }
 
   async deleteDataSource(name: string): Promise<unknown> {
-    return this.request(`/datasources/${name}`, {
+    return this.request(`/datasources('${encodeURIComponent(name)}')`, {
       method: 'DELETE',
     });
   }
@@ -195,36 +197,37 @@ export class AzureSearchClient {
   }
 
   async getIndexer(name: string): Promise<unknown> {
-    return this.request(`/indexers/${name}`);
+    return this.request(`/indexers('${encodeURIComponent(name)}')`);
   }
 
   async createOrUpdateIndexer(name: string, indexerDefinition: unknown): Promise<unknown> {
-    return this.request(`/indexers/${name}`, {
+    return this.request(`/indexers('${encodeURIComponent(name)}')`, {
       method: 'PUT',
       body: JSON.stringify(indexerDefinition),
+      headers: this.headers({ Prefer: "return=representation" }),
     });
   }
 
   async deleteIndexer(name: string): Promise<unknown> {
-    return this.request(`/indexers/${name}`, {
+    return this.request(`/indexers('${encodeURIComponent(name)}')`, {
       method: 'DELETE',
     });
   }
 
   async runIndexer(name: string): Promise<unknown> {
-    return this.request(`/indexers/${name}/run`, {
+    return this.request(`/indexers('${encodeURIComponent(name)}')/search.run`, {
       method: 'POST',
     });
   }
 
   async resetIndexer(name: string): Promise<unknown> {
-    return this.request(`/indexers/${name}/reset`, {
+    return this.request(`/indexers('${encodeURIComponent(name)}')/search.reset`, {
       method: 'POST',
     });
   }
 
   async getIndexerStatus(name: string): Promise<unknown> {
-    return this.request(`/indexers/${name}/status`);
+    return this.request(`/indexers('${encodeURIComponent(name)}')/search.status`);
   }
 
   // Skillset operations
@@ -234,18 +237,19 @@ export class AzureSearchClient {
   }
 
   async getSkillset(name: string): Promise<unknown> {
-    return this.request(`/skillsets/${name}`);
+    return this.request(`/skillsets('${encodeURIComponent(name)}')`);
   }
 
   async createOrUpdateSkillset(name: string, skillsetDefinition: unknown): Promise<unknown> {
-    return this.request(`/skillsets/${name}`, {
+    return this.request(`/skillsets('${encodeURIComponent(name)}')`, {
       method: 'PUT',
       body: JSON.stringify(skillsetDefinition),
+      headers: this.headers({ Prefer: "return=representation" }),
     });
   }
 
   async deleteSkillset(name: string): Promise<unknown> {
-    return this.request(`/skillsets/${name}`, {
+    return this.request(`/skillsets('${encodeURIComponent(name)}')`, {
       method: 'DELETE',
     });
   }
@@ -257,18 +261,19 @@ export class AzureSearchClient {
   }
 
   async getSynonymMap(name: string): Promise<unknown> {
-    return this.request(`/synonymmaps/${name}`);
+    return this.request(`/synonymmaps('${encodeURIComponent(name)}')`);
   }
 
   async createOrUpdateSynonymMap(name: string, synonymMapDefinition: SynonymMap): Promise<SynonymMap | unknown> {
-    return this.request(`/synonymmaps/${name}`, {
+    return this.request(`/synonymmaps('${encodeURIComponent(name)}')`, {
       method: 'PUT',
       body: JSON.stringify(synonymMapDefinition),
+      headers: this.headers({ Prefer: "return=representation" }),
     });
   }
 
   async deleteSynonymMap(name: string): Promise<unknown> {
-    return this.request(`/synonymmaps/${name}`, {
+    return this.request(`/synonymmaps('${encodeURIComponent(name)}')`, {
       method: 'DELETE',
     });
   }
@@ -283,7 +288,7 @@ export class AzureSearchClient {
 
   // Enhanced Document operations
   async indexDocuments(indexName: string, batch: IndexBatch): Promise<OperationResult> {
-    return this.request(`/indexes/${indexName}/docs/index`, {
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')/docs/index`, {
       method: 'POST',
       body: JSON.stringify(batch),
     }) as Promise<OperationResult>;
@@ -347,21 +352,21 @@ export class AzureSearchClient {
 
   // -------- Analyze / Suggest / Autocomplete --------
   async analyzeText(indexName: string, body: Record<string, unknown>): Promise<unknown> {
-    return this.request(`/indexes/${encodeURIComponent(indexName)}/search.analyze`, {
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')/search.analyze`, {
       method: "POST",
       body: this.json(body),
       headers: this.headers(),
     });
   }
   async suggest(indexName: string, body: Record<string, unknown>): Promise<unknown> {
-    return this.request(`/indexes/${encodeURIComponent(indexName)}/docs/suggest`, {
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')/docs/suggest`, {
       method: "POST",
       body: this.json(body),
       headers: this.headers(),
     });
   }
   async autocomplete(indexName: string, body: Record<string, unknown>): Promise<unknown> {
-    return this.request(`/indexes/${encodeURIComponent(indexName)}/docs/autocomplete`, {
+    return this.request(`/indexes('${encodeURIComponent(indexName)}')/docs/autocomplete`, {
       method: "POST",
       body: this.json(body),
       headers: this.headers(),
@@ -378,7 +383,7 @@ export class AzureSearchClient {
   async upsertAgent(agentName: string, agent: unknown, headers: Record<string,string> = {}): Promise<unknown> {
     return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
       method: "PUT",
-      headers: this.headers(headers),
+      headers: this.headers({ Prefer: "return=representation", ...headers }),
       body: this.json(agent),
     });
   }

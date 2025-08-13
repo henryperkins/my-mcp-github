@@ -68,14 +68,14 @@ function validateIndexDefinition(def: any): string[] {
 
     // Fix #9: Check for illegal 'stored' property on vector fields
     if (f.type === "Collection(Edm.Single)") {
-      if (f.stored === true) {
-        errors.push(`Vector field ${f.name} cannot have 'stored: true' - this property is not allowed for vector fields`);
-      }
       if (!f.dimensions || f.dimensions < 1) {
         errors.push(`Vector field ${f.name} must have dimensions > 0`);
       }
       if (!f.vectorSearchProfile) {
         errors.push(`Vector field ${f.name} must specify vectorSearchProfile`);
+      }
+      if (f.stored === false && f.retrievable !== false) {
+        errors.push(`Vector field ${f.name} with stored=false must also set retrievable=false`);
       }
     }
 
