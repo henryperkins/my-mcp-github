@@ -1,13 +1,26 @@
 // src/IndexTools.ts
 import { z } from "zod";
 import { IndexBuilder, IndexTemplates } from "./index-builder";
-import { formatResponse, formatToolError, normalizeError } from "./utils/response";
+import { ResponseFormatter } from "./utils/response-helper";
 import { resolveAnalyzerForLanguage } from "./utils/languageAnalyzers";
 import getToolHints from "./utils/toolHints";
 import { encodeCursor, decodeCursor } from "./utils/pagination";
+import { paginateArray } from "./utils/streaming-pagination";
+import { withTimeout } from "./utils/timeout";
 import type { ToolContext } from "./types";
 import { ToolElicitationBuilder } from "./tool-elicitation";
 import { elicitIfNeeded, mergeElicitedParams, needsElicitation } from "./utils/elicitation-integration";
+import {
+  IndexNameSchema,
+  IndexDefinitionSchema,
+  IndexFieldSchema,
+  PaginationSchema
+} from "./schemas";
+import {
+  MAX_PAGE_SIZE,
+  DEFAULT_PAGE_SIZE,
+  DEFAULT_TIMEOUT_MS
+} from "./constants";
 
 /** Local validation helper to keep behavior consistent with previous implementation. */
 function validateIndexDefinition(def: any): string[] {
@@ -40,7 +53,6 @@ function validateIndexDefinition(def: any): string[] {
   return errors;
 }
 
-
 /**
  * Register Index management tools on the provided MCP server.
  * Tools:
@@ -49,6 +61,8 @@ function validateIndexDefinition(def: any): string[] {
  */
 export function registerIndexTools(server: any, context: ToolContext) {
   const { getClient, getSummarizer } = context;
+  const rf = new ResponseFormatter(context.getSummarizer);
+
   // ---------------- INDEX MANAGEMENT ----------------
   server.tool(
     "listIndexes",
@@ -64,10 +78,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
 
         if (verbose) {
           const structured = { indexes, count: indexes.length };
-          return await formatResponse(structured, {
-            summarizer: getSummarizer?.() || undefined,
-            structuredContent: structured
-          });
+          return rf.formatSuccess(structured);
         }
 
         let indexInfo = indexes.map((idx: any) => ({
@@ -89,7 +100,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
                   documentCount: stats.documentCount || 0,
                   storageSize: stats.storageSize || 0
                 };
-                
+
                 // Add vector index size if available and non-zero
                 if (stats.vectorIndexSize && stats.vectorIndexSize > 0) {
                   result.vectorIndexSize = stats.vectorIndexSize;
@@ -98,7 +109,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
                   result.vectorIndexSize = 0;
                   result.vectorIndexNote = "Vector search enabled but size not reported";
                 }
-                
+
                 return result;
               } catch {
                 return info;
@@ -108,13 +119,9 @@ export function registerIndexTools(server: any, context: ToolContext) {
         }
 
         const structuredData = { indexes: indexInfo, count: indexInfo.length };
-        return await formatResponse(structuredData, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: structuredData
-        });
+        return rf.formatSuccess(structuredData);
       } catch (e) {
-        const { insight } = normalizeError(e, { tool: "listIndexes" });
-        return formatToolError(insight);
+        return rf.formatError(e, { tool: "listIndexes", includeStats, verbose });
       }
     },
     getToolHints("GET")
@@ -127,14 +134,10 @@ export function registerIndexTools(server: any, context: ToolContext) {
     async ({ indexName }: any) => {
       try {
         const client = getClient();
-        const idx = await client.getIndex(indexName);
-        return await formatResponse(idx, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: idx
-        });
+        const exec = rf.createToolExecutor<{ indexName: string }>("getIndex", DEFAULT_TIMEOUT_MS);
+        return exec({ indexName }, (p) => client.getIndex(p.indexName), { indexName });
       } catch (e) {
-        const { insight } = normalizeError(e, { tool: "getIndex", indexName });
-        return formatToolError(insight);
+        return rf.formatError(e, { tool: "getIndex", indexName });
       }
     },
     getToolHints("GET")
@@ -148,18 +151,18 @@ export function registerIndexTools(server: any, context: ToolContext) {
       try {
         const client = getClient();
         const stats = await client.getIndexStats(indexName);
-        
+
         // Add diagnostic information if vectorIndexSize is 0
         if (stats && stats.vectorIndexSize === 0) {
           // Fetch index definition to check for vector fields
           try {
             const indexDef = await client.getIndex(indexName);
-            const hasVectorFields = indexDef.fields?.some((f: any) => 
-              f.type === 'Collection(Edm.Single)' || 
+            const hasVectorFields = indexDef.fields?.some((f: any) =>
+              f.type === 'Collection(Edm.Single)' ||
               f.type === 'Edm.Vector' ||
               (f.dimensions && f.dimensions > 0)
             );
-            
+
             if (hasVectorFields) {
               stats.note = "Vector fields detected but vectorIndexSize shows 0. This may indicate vectors are not yet indexed or the API doesn't report vector storage separately.";
               stats.vectorFieldsPresent = true;
@@ -168,14 +171,10 @@ export function registerIndexTools(server: any, context: ToolContext) {
             // Ignore errors from fetching index definition
           }
         }
-        
-        return await formatResponse(stats, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: stats
-        });
+
+        return rf.formatSuccess(stats);
       } catch (e) {
-        const { insight } = normalizeError(e, { tool: "getIndexStats", indexName });
-        return formatToolError(insight);
+        return rf.formatError(e, { tool: "getIndexStats", indexName });
       }
     },
     getToolHints("GET")
@@ -188,11 +187,11 @@ export function registerIndexTools(server: any, context: ToolContext) {
     async ({ indexName }: any) => {
       try {
         const client = getClient();
-        
+
         // Use MCP elicitation for confirmation if supported
         const elicitRequest = ToolElicitationBuilder.deleteIndexElicitation(indexName);
         const confirmed = await elicitIfNeeded(context.agent || server, elicitRequest);
-        
+
         // If elicitation was triggered, check confirmation
         if (confirmed !== undefined) {
           if (confirmed.indexName !== indexName) {
@@ -205,13 +204,11 @@ export function registerIndexTools(server: any, context: ToolContext) {
             throw new Error("User did not acknowledge the permanent nature of this action");
           }
         }
-        
-        await client.deleteIndex(indexName);
-        const structured = { success: true, message: `Index ${indexName} deleted` };
-        return await formatResponse(structured, { summarizer: getSummarizer?.() || undefined, structuredContent: structured });
+
+        await rf.executeWithTimeout(client.deleteIndex(indexName), DEFAULT_TIMEOUT_MS, "deleteIndex", { indexName });
+        return rf.formatSuccess({ success: true, message: `Index ${indexName} deleted` });
       } catch (e) {
-        const { insight } = normalizeError(e, { tool: "deleteIndex", indexName });
-        return formatToolError(insight);
+        return rf.formatError(e, { tool: "deleteIndex", indexName });
       }
     },
     getToolHints("DELETE")
@@ -269,7 +266,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
           // Get the first elicitation step (choosing approach)
           const elicitationSteps = ToolElicitationBuilder.createIndexElicitation();
           const elicited = await elicitIfNeeded(context.agent || server, elicitationSteps[0]);
-          
+
           if (elicited?.approach) {
             if (elicited.approach === "template") {
               // Ask for template choice
@@ -282,7 +279,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
             }
             // For "custom", we'll proceed with indexDefinition requirement
           }
-          
+
           // Get index configuration details if we have a template
           if (template && !indexName) {
             const configElicited = await elicitIfNeeded(context.agent || server, elicitationSteps[2]);
@@ -355,11 +352,14 @@ export function registerIndexTools(server: any, context: ToolContext) {
           }
         }
 
-        const result = await client.createIndex(finalDefinition);
-        return await formatResponse(result, { summarizer: getSummarizer?.() || undefined });
+        return rf.executeWithTimeout(
+          client.createIndex(finalDefinition),
+          DEFAULT_TIMEOUT_MS,
+          "createIndex",
+          { indexName: finalDefinition.name }
+        );
       } catch (e) {
-        const { insight } = normalizeError(e, { tool: "createIndex" });
-        return formatToolError(insight);
+        return rf.formatError(e, { tool: "createIndex" });
       }
     },
     getToolHints("POST")
@@ -421,9 +421,18 @@ export function registerIndexTools(server: any, context: ToolContext) {
       try {
         const client = getClient();
         let finalDefinition: any;
+        let etag: string | undefined;
 
         if (mergeWithExisting || addFields || updateSemanticConfig) {
-          const existingIndex: any = await client.getIndex(indexName);
+          // Fetch with timeout to prevent hanging
+          const existingIndex: any = await withTimeout(
+            client.getIndex(indexName),
+            DEFAULT_TIMEOUT_MS,
+            `getIndex:${indexName}`
+          );
+
+          // Preserve ETag for optimistic concurrency control
+          etag = existingIndex["@odata.etag"];
           finalDefinition = { ...(existingIndex as any) };
 
           if (addFields && Array.isArray(addFields)) {
@@ -468,10 +477,19 @@ export function registerIndexTools(server: any, context: ToolContext) {
 
         finalDefinition.name = indexName;
 
+        // Include ETag for optimistic concurrency control
+        if (etag) {
+          finalDefinition["@odata.etag"] = etag;
+        }
+
         if (validate) {
           // Prevent removals if indexDefinition provided (compat rule)
           if (indexDefinition?.fields) {
-            const existingIndex: any = await client.getIndex(indexName).catch(() => null);
+            const existingIndex: any = await withTimeout(
+              client.getIndex(indexName).catch(() => null),
+              DEFAULT_TIMEOUT_MS,
+              `getIndex:${indexName}:validation`
+            );
             if (existingIndex) {
               const existingNames = new Set(existingIndex.fields.map((f: any) => f.name));
               const newNames = new Set(finalDefinition.fields.map((f: any) => f.name));
@@ -489,43 +507,53 @@ export function registerIndexTools(server: any, context: ToolContext) {
           }
         }
 
-        const result = await client.createOrUpdateIndex(indexName, finalDefinition);
-        return await formatResponse(result, { summarizer: getSummarizer?.() || undefined });
+        return rf.executeWithTimeout(
+          client.createOrUpdateIndex(indexName, finalDefinition),
+          DEFAULT_TIMEOUT_MS,
+          "createOrUpdateIndex",
+          { indexName }
+        );
       } catch (e) {
-        const { insight } = normalizeError(e, { tool: "createOrUpdateIndex", indexName });
-        return formatToolError(insight);
+        return rf.formatError(e, { tool: "createOrUpdateIndex", indexName });
       }
     },
     getToolHints("PUT")
   );
 
+  const ListIndexesPaginatedSchema = z.object({
+    cursor: z.string().optional().describe("Opaque pagination cursor"),
+    pageSize: z.number().int().positive().max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
+  });
+
   server.tool(
     "listIndexesPaginated",
     "List indexes with an opaque MCP-style cursor.",
-    {
-      cursor: z.string().optional().describe("Opaque pagination cursor"),
-      pageSize: z.number().int().positive().max(200).default(50),
-    },
-    async ({ cursor, pageSize }: any) => {
+    ListIndexesPaginatedSchema,
+    async (params: z.infer<typeof ListIndexesPaginatedSchema>) => {
+      const { cursor, pageSize } = params;
       try {
-        const { offset = 0 } = decodeCursor(cursor);
         const client = context.getClient();
-        const all = await client.listIndexes();
-        const slice = all.slice(offset, offset + pageSize);
-        const nextOffset =
-          offset + pageSize < all.length ? offset + pageSize : null;
-        const nextCursor =
-          nextOffset !== null ? encodeCursor({ offset: nextOffset }) : undefined;
+
+        // Fetch indexes with timeout
+        const all = await withTimeout(
+          client.listIndexes(),
+          DEFAULT_TIMEOUT_MS,
+          "listIndexes"
+        );
+
+        // Use efficient pagination utility
+        const paginatedResult = paginateArray(all, { pageSize, cursor });
+
         const structuredData = {
-          indexes: slice,
-          ...(nextCursor && { nextCursor }),
+          indexes: paginatedResult.items,
+          totalCount: paginatedResult.totalCount,
+          hasMore: paginatedResult.hasMore,
+          ...(paginatedResult.nextCursor && { nextCursor: paginatedResult.nextCursor }),
         };
-        return await formatResponse(structuredData, {
-          structuredContent: structuredData
-        });
+
+        return rf.formatSuccess(structuredData);
       } catch (e) {
-        const { insight } = normalizeError(e, { tool: "listIndexesPaginated" });
-        return formatToolError(insight);
+        return rf.formatError(e, { tool: "listIndexesPaginated", cursor, pageSize });
       }
     },
     getToolHints("GET")

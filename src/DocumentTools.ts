@@ -1,10 +1,18 @@
 // src/DocumentTools.ts
 import { z } from "zod";
-import { formatResponse, formatToolError, normalizeError } from "./utils/response";
+import { ResponseFormatter } from "./utils/response-helper";
 import getToolHints from "./utils/toolHints";
 import { ToolElicitationBuilder } from "./tool-elicitation";
 import { elicitIfNeeded } from "./utils/elicitation-integration";
 import type { ToolContext } from "./types";
+import {
+  SearchParamsSchema,
+  IndexNameSchema,
+  DocumentKeySchema,
+  DocumentBatchSchema,
+  SearchResultsSchema
+} from "./schemas";
+import { DEFAULT_TIMEOUT_MS } from "./constants";
 
 /**
  * Register document search and CRUD tools.
@@ -14,85 +22,63 @@ import type { ToolContext } from "./types";
  */
 export function registerDocumentTools(server: any, context: ToolContext) {
   const { getClient, getSummarizer } = context;
-  // ---------------- DOCUMENTS ----------------
-  const SearchResultsSchema = z.object({
-    value: z.array(z.any()),
-    "@odata.count": z.number().optional(),
-    "@search.nextPageParameters": z.any().optional(),
-  }).strict();
+  const rf = new ResponseFormatter(getSummarizer);
 
   server.tool(
     "searchDocuments",
     "Search for documents using keywords, filters, and sorting. Supports OData filter syntax, pagination (max 50 results per request), field selection, and relevance scoring. Use '*' to retrieve all documents.",
-    {
-      indexName: z.string(),
-      search: z.string().default("*"),
-      top: z
-        .number()
-        .int()
-        .positive()
-        .max(50)
-        .default(10)
-        .describe("Max 50 to prevent large responses"),
-      skip: z.number().int().nonnegative().default(0).describe("Skip N results for pagination"),
-      select: z.array(z.string()).optional().describe("Fields to return (reduces response size)"),
-      filter: z.string().optional(),
-      orderBy: z.string().optional(),
-      includeTotalCount: z.boolean().default(true)
-    },
-    async ({ indexName, search, top, skip, select, filter, orderBy, includeTotalCount }: any) => {
-      try {
-        const client = getClient();
-        
-        // Elicit search parameters if index not provided
-        if (!indexName) {
-          const elicited = await elicitIfNeeded(context.agent || server, ToolElicitationBuilder.searchDocumentsElicitation());
-          if (elicited) {
-            indexName = elicited.indexName || indexName;
-            search = elicited.searchQuery || search || "*";
-            top = elicited.top || top;
-            includeTotalCount = elicited.includeTotalCount ?? includeTotalCount;
-          }
+    SearchParamsSchema,
+    async (params: z.infer<typeof SearchParamsSchema>) => {
+      let { indexName, search, top, skip, select, filter, orderBy, includeTotalCount } = params;
+      const client = getClient();
+
+      // Elicit search parameters if index not provided
+      if (!indexName) {
+        const elicited = await elicitIfNeeded(context.agent || server, ToolElicitationBuilder.searchDocumentsElicitation());
+        if (elicited) {
+          indexName = elicited.indexName || indexName;
+          search = elicited.searchQuery || search || "*";
+          top = elicited.top || top;
+          includeTotalCount = elicited.includeTotalCount ?? includeTotalCount;
         }
-        const searchParams = {
-          search,
-          top,
-          skip,
-          ...(select && { select: select.join(",") }),
-          ...(filter && { filter }),
-          // Azure Search expects 'orderby' (no $) in POST body
-          ...(orderBy && { orderby: orderBy }),
-          ...(includeTotalCount && { count: true })
-        };
-        const result = await client.searchDocuments(indexName, searchParams);
-        return await formatResponse(result, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: result
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "searchDocuments", indexName });
-        return formatToolError(insight);
       }
+
+      const body = {
+        search,
+        top,
+        skip,
+        ...(select && { select: select.join(",") }),
+        ...(filter && { filter }),
+        // Azure Search expects 'orderby' (no $) in POST body
+        ...(orderBy && { orderby: orderBy }),
+        ...(includeTotalCount && { count: true })
+      };
+
+      const exec = rf.createToolExecutor<typeof params>("searchDocuments", DEFAULT_TIMEOUT_MS);
+      return exec(
+        { indexName, search, top, skip, select, filter, orderBy, includeTotalCount } as any,
+        () => client.searchDocuments(indexName, body),
+        { tool: "searchDocuments", indexName, ...body }
+      );
     },
     { ...getToolHints("POST"), outputSchema: SearchResultsSchema }
   );
 
+  const GetDocumentSchema = z.object({
+    indexName: IndexNameSchema,
+    key: DocumentKeySchema.transform(String),
+    select: z.array(z.string()).optional()
+  });
+
   server.tool(
     "getDocument",
     "Lookup a document by its primary key.",
-    { indexName: z.string(), key: z.string(), select: z.array(z.string()).optional() },
-    async ({ indexName, key, select }: any) => {
-      try {
-        const client = getClient();
-        const doc = await client.getDocument(indexName, key, select);
-        return await formatResponse(doc, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: doc
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "getDocument", indexName, key });
-        return formatToolError(insight);
-      }
+    GetDocumentSchema,
+    async (params: z.infer<typeof GetDocumentSchema>) => {
+      const { indexName, key } = params;
+      const client = getClient();
+      const exec = rf.createToolExecutor<typeof params>("getDocument", DEFAULT_TIMEOUT_MS);
+      return exec(params, (p) => client.getDocument(p.indexName, p.key, p.select), { tool: "getDocument", indexName, key });
     },
     getToolHints("GET")
   );
@@ -100,123 +86,106 @@ export function registerDocumentTools(server: any, context: ToolContext) {
   server.tool(
     "countDocuments",
     "Return document count.",
-    { indexName: z.string() },
-    async ({ indexName }: any) => {
-      try {
-        const client = getClient();
-        const count = await client.getDocumentCount(indexName);
-        const structuredData = { count };
-        return await formatResponse(structuredData, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: structuredData
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "countDocuments", indexName });
-        return formatToolError(insight);
-      }
+    z.object({ indexName: IndexNameSchema }),
+    async ({ indexName }: { indexName: string }) => {
+      const client = getClient();
+      const exec = rf.createToolExecutor<{ indexName: string }>("countDocuments", DEFAULT_TIMEOUT_MS);
+      return exec(
+        { indexName },
+        async (p) => {
+          const count = await client.getDocumentCount(p.indexName);
+          return { count };
+        },
+        { tool: "countDocuments", indexName }
+      );
     },
     { ...getToolHints("GET"), outputSchema: z.object({ count: z.number() }) }
   );
 
   // ---------------- DOCUMENT OPERATIONS ----------------
+  const UploadDocumentsSchema = z.object({
+    indexName: IndexNameSchema,
+    documents: DocumentBatchSchema.describe("Array of documents to upload")
+  });
+
   server.tool(
     "uploadDocuments",
     "Upload new documents to an index. Documents must match the index schema. Maximum 1000 documents per batch. For existing documents, use mergeDocuments instead.",
-    {
-      indexName: z.string(),
-      documents: z.array(z.any()).describe("Array of documents to upload")
-    },
-    async ({ indexName, documents }: any) => {
-      try {
-        const client = getClient();
-        
-        // Elicit upload parameters if missing
-        if (!indexName || !documents || documents.length === 0) {
-          const elicited = await elicitIfNeeded(context.agent || server, ToolElicitationBuilder.uploadDocumentsElicitation());
-          if (elicited) {
-            indexName = elicited.indexName || indexName;
-            // Note: documents would need to be provided separately
-            // This elicitation just helps with configuration
-          }
+    UploadDocumentsSchema,
+    async (params: z.infer<typeof UploadDocumentsSchema>) => {
+      let { indexName, documents } = params;
+      const client = getClient();
+
+      // Elicit upload parameters if missing
+      if (!indexName || !documents || documents.length === 0) {
+        const elicited = await elicitIfNeeded(context.agent || server, ToolElicitationBuilder.uploadDocumentsElicitation());
+        if (elicited) {
+          indexName = elicited.indexName || indexName;
         }
-        const result = await client.uploadDocuments(indexName, documents);
-        return await formatResponse(result, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: result
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "uploadDocuments", indexName });
-        return formatToolError(insight);
       }
+
+      const exec = rf.createToolExecutor<typeof params>("uploadDocuments", DEFAULT_TIMEOUT_MS);
+      return exec(
+        { indexName, documents } as any,
+        () => client.uploadDocuments(indexName, documents),
+        { tool: "uploadDocuments", indexName, documentCount: documents?.length }
+      );
     },
     getToolHints("POST")
   );
+
+  const MergeDocumentsSchema = z.object({
+    indexName: IndexNameSchema,
+    documents: DocumentBatchSchema.describe("Array of documents to merge")
+  });
 
   server.tool(
     "mergeDocuments",
     "Merge documents in an index (updates existing documents).",
-    {
-      indexName: z.string(),
-      documents: z.array(z.any()).describe("Array of documents to merge")
-    },
-    async ({ indexName, documents }: any) => {
-      try {
-        const client = getClient();
-        const result = await client.mergeDocuments(indexName, documents);
-        return await formatResponse(result, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: result
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "mergeDocuments", indexName });
-        return formatToolError(insight);
-      }
+    MergeDocumentsSchema,
+    async (params: z.infer<typeof MergeDocumentsSchema>) => {
+      const { indexName, documents } = params;
+      const client = getClient();
+      const exec = rf.createToolExecutor<typeof params>("mergeDocuments", DEFAULT_TIMEOUT_MS);
+      return exec(params, (p) => client.mergeDocuments(p.indexName, p.documents), { tool: "mergeDocuments", indexName, documentCount: documents?.length });
     },
     getToolHints("POST")
   );
+
+  const MergeOrUploadDocumentsSchema = z.object({
+    indexName: IndexNameSchema,
+    documents: DocumentBatchSchema.describe("Array of documents to merge or upload")
+  });
 
   server.tool(
     "mergeOrUploadDocuments",
     "Merge or upload documents (updates existing or creates new).",
-    {
-      indexName: z.string(),
-      documents: z.array(z.any()).describe("Array of documents to merge or upload")
-    },
-    async ({ indexName, documents }: any) => {
-      try {
-        const client = getClient();
-        const result = await client.mergeOrUploadDocuments(indexName, documents);
-        return await formatResponse(result, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: result
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "mergeOrUploadDocuments", indexName });
-        return formatToolError(insight);
-      }
+    MergeOrUploadDocumentsSchema,
+    async (params: z.infer<typeof MergeOrUploadDocumentsSchema>) => {
+      const { indexName, documents } = params;
+      const client = getClient();
+      const exec = rf.createToolExecutor<typeof params>("mergeOrUploadDocuments", DEFAULT_TIMEOUT_MS);
+      return exec(params, (p) => client.mergeOrUploadDocuments(p.indexName, p.documents), { tool: "mergeOrUploadDocuments", indexName, documentCount: documents?.length });
     },
     getToolHints("POST")
   );
 
+  const DeleteDocumentsSchema = z.object({
+    indexName: IndexNameSchema,
+    keys: z.array(DocumentKeySchema.transform(String))
+      .min(1, "At least one key must be provided")
+      .describe("Array of document keys to delete")
+  });
+
   server.tool(
     "deleteDocuments",
     "⚠️ Delete specific documents from an index by their key values. This is permanent and cannot be undone. Provide an array of document keys to delete.",
-    {
-      indexName: z.string(),
-      keys: z.array(z.any()).describe("Array of document keys to delete")
-    },
-    async ({ indexName, keys }: any) => {
-      try {
-        const client = getClient();
-        const result = await client.deleteDocuments(indexName, keys);
-        return await formatResponse(result, {
-          summarizer: getSummarizer?.() || undefined,
-          structuredContent: result
-        });
-      } catch (e) {
-        const { insight } = normalizeError(e, { tool: "deleteDocuments", indexName });
-        return formatToolError(insight);
-      }
+    DeleteDocumentsSchema,
+    async (params: z.infer<typeof DeleteDocumentsSchema>) => {
+      const { indexName, keys } = params;
+      const client = getClient();
+      const exec = rf.createToolExecutor<typeof params>("deleteDocuments", DEFAULT_TIMEOUT_MS);
+      return exec(params, (p) => client.deleteDocuments(p.indexName, p.keys), { tool: "deleteDocuments", indexName, keyCount: keys?.length });
     },
     getToolHints("DELETE")
   );

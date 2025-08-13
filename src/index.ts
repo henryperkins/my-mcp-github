@@ -12,6 +12,7 @@ import { registerDataTools } from "./DataTools";
 import { registerIndexerTools } from "./IndexerTools";
 import { registerSkillTools } from "./SkillTools";
 import { registerSynonymTools } from "./SynonymTools";
+import { StringBuilder } from "./utils/string-builder";
 
 // Type definitions for environment
 interface Env {
@@ -37,7 +38,15 @@ class AzureSearchMCP extends McpAgent {
     }
   });
 
+  private cachedClient: AzureSearchClient | null = null;
+  private cachedOpenAIClient: AzureOpenAIClient | null = null;
+  private openAIClientChecked = false;
+
   private getClient(): AzureSearchClient {
+    if (this.cachedClient) {
+      return this.cachedClient;
+    }
+
     const env = this.env as Env;
     const endpoint = env.AZURE_SEARCH_ENDPOINT;
     const apiKey = env.AZURE_SEARCH_API_KEY;
@@ -49,21 +58,29 @@ class AzureSearchMCP extends McpAgent {
       throw new Error("AZURE_SEARCH_API_KEY is not configured. Please set it as a Worker secret.");
     }
     
-    return new AzureSearchClient(endpoint, apiKey);
+    this.cachedClient = new AzureSearchClient(endpoint, apiKey);
+    return this.cachedClient;
   }
   
   private getOpenAIClient(): AzureOpenAIClient | null {
+    if (this.openAIClientChecked) {
+      return this.cachedOpenAIClient;
+    }
+
     const env = this.env as Env;
     const endpoint = env.AZURE_OPENAI_ENDPOINT;
     const apiKey = env.AZURE_OPENAI_API_KEY;
     const deploymentName = env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini";
+    
+    this.openAIClientChecked = true;
     
     if (!endpoint || !apiKey) {
       console.log("Azure OpenAI not configured for summarization");
       return null;
     }
     
-    return new AzureOpenAIClient(endpoint, apiKey, deploymentName);
+    this.cachedOpenAIClient = new AzureOpenAIClient(endpoint, apiKey, deploymentName);
+    return this.cachedOpenAIClient;
   }
 
   async init() {
@@ -81,7 +98,9 @@ class AzureSearchMCP extends McpAgent {
       getClient: () => this.getClient(),
       getSummarizer: () => {
         const openAI = this.getOpenAIClient();
-        return openAI ? (text, maxTokens) => openAI.summarize(text, maxTokens) : null;
+        // Fix: Return a function or null, not a conditional function that might be null
+        if (!openAI) return null;
+        return (text: string, maxTokens?: number) => openAI.summarize(text, maxTokens);
       },
       agent: this // Pass the agent instance for elicitation support
     };
@@ -426,56 +445,76 @@ Available templates: documentSearch, productCatalog, hybridSearch, knowledgeBase
           }
         });
         
-        let migrationPlan = `**Zero-Downtime Index Migration Plan for "${source_index}"**\n\n`;
+        const plan = StringBuilder.create(`**Zero-Downtime Index Migration Plan for "${source_index}"**\n\n`);
         
-        migrationPlan += `**Changes requested:** ${changes}\n\n`;
+        plan.appendLine(`**Changes requested:** ${changes}\n`);
         
-        migrationPlan += `**Step 1: Analyze Current Index**\n`;
-        migrationPlan += `- Use getIndex to get current schema\n`;
-        migrationPlan += `- Use getIndexStats to check document count\n`;
-        migrationPlan += `- Document all field mappings and configurations\n\n`;
+        plan.appendLine(`**Step 1: Analyze Current Index**`);
+        plan.appendLines(
+          `- Use getIndex to get current schema`,
+          `- Use getIndexStats to check document count`,
+          `- Document all field mappings and configurations\n`
+        );
         
-        migrationPlan += `**Step 2: Create New Index**\n`;
-        migrationPlan += `- Clone existing index: createIndex with cloneFrom='${source_index}'\n`;
-        migrationPlan += `- New index name: '${source_index}-v2' or '${source_index}-${new Date().toISOString().split('T')[0]}'\n`;
-        migrationPlan += `- Apply your changes to the new index definition\n`;
-        migrationPlan += `- Validate the new schema before creation\n\n`;
+        plan.appendLine(`**Step 2: Create New Index**`);
+        plan.appendLines(
+          `- Clone existing index: createIndex with cloneFrom='${source_index}'`,
+          `- New index name: '${source_index}-v2' or '${source_index}-${new Date().toISOString().split('T')[0]}'`,
+          `- Apply your changes to the new index definition`,
+          `- Validate the new schema before creation\n`
+        );
         
-        migrationPlan += `**Step 3: Migrate Data**\n`;
-        migrationPlan += `Option A - Re-index from source:\n`;
-        migrationPlan += `- Update indexers to point to new index\n`;
-        migrationPlan += `- Run full indexing with resetIndexer + runIndexer\n\n`;
-        migrationPlan += `Option B - Copy from old index:\n`;
-        migrationPlan += `- Export documents using searchDocuments with pagination\n`;
-        migrationPlan += `- Import to new index using uploadDocuments in batches\n`;
-        migrationPlan += `- Monitor progress and handle errors\n\n`;
+        plan.appendLine(`**Step 3: Migrate Data**`);
+        plan.appendLine(`Option A - Re-index from source:`);
+        plan.appendLines(
+          `- Update indexers to point to new index`,
+          `- Run full indexing with resetIndexer + runIndexer\n`
+        );
+        plan.appendLine(`Option B - Copy from old index:`);
+        plan.appendLines(
+          `- Export documents using searchDocuments with pagination`,
+          `- Import to new index using uploadDocuments in batches`,
+          `- Monitor progress and handle errors\n`
+        );
         
-        migrationPlan += `**Step 4: Validate Migration**\n`;
-        migrationPlan += `- Compare document counts between indexes\n`;
-        migrationPlan += `- Run test queries on both indexes\n`;
-        migrationPlan += `- Verify all features work correctly\n\n`;
+        plan.appendLine(`**Step 4: Validate Migration**`);
+        plan.appendLines(
+          `- Compare document counts between indexes`,
+          `- Run test queries on both indexes`,
+          `- Verify all features work correctly\n`
+        );
         
-        migrationPlan += `**Step 5: Switch Over**\n`;
-        migrationPlan += `- Update application to use new index\n`;
-        migrationPlan += `- Monitor for errors\n`;
-        migrationPlan += `- Keep old index running during transition\n\n`;
+        plan.appendLine(`**Step 5: Switch Over**`);
+        plan.appendLines(
+          `- Update application to use new index`,
+          `- Monitor for errors`,
+          `- Keep old index running during transition\n`
+        );
         
-        migrationPlan += `**Step 6: Cleanup**\n`;
+        plan.appendLine(`**Step 6: Cleanup**`);
         if (keep_old_index === 'yes') {
-          migrationPlan += `- Keep old index '${source_index}' as backup\n`;
-          migrationPlan += `- Consider renaming to '${source_index}-backup'\n`;
-          migrationPlan += `- Set up retention policy for backup\n`;
+          plan.appendLines(
+            `- Keep old index '${source_index}' as backup`,
+            `- Consider renaming to '${source_index}-backup'`,
+            `- Set up retention policy for backup`
+          );
         } else {
-          migrationPlan += `- After verification period, delete old index\n`;
-          migrationPlan += `- Use deleteIndex with indexName='${source_index}'\n`;
-          migrationPlan += `- Clean up old indexers and data sources\n`;
+          plan.appendLines(
+            `- After verification period, delete old index`,
+            `- Use deleteIndex with indexName='${source_index}'`,
+            `- Clean up old indexers and data sources`
+          );
         }
         
-        migrationPlan += `\n**Important Notes:**\n`;
-        migrationPlan += `- Some changes (removing fields, changing field types) require full re-indexing\n`;
-        migrationPlan += `- Test thoroughly in a dev environment first\n`;
-        migrationPlan += `- Have a rollback plan ready\n`;
-        migrationPlan += `- Monitor closely during and after migration\n`;
+        plan.appendLine(`\n**Important Notes:**`);
+        plan.appendLines(
+          `- Some changes (removing fields, changing field types) require full re-indexing`,
+          `- Test thoroughly in a dev environment first`,
+          `- Have a rollback plan ready`,
+          `- Monitor closely during and after migration`
+        );
+        
+        const migrationPlan = plan.toString();
         
         messages.push({
           role: "assistant" as const,
