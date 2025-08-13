@@ -211,34 +211,34 @@ export function registerDocumentTools(server: any, context: ToolContext) {
 
   const DeleteDocumentsSchema = z.object({
     indexName: IndexNameSchema.optional(),
-    keys: z
-      .array(DocumentKeySchema.transform(String))
-      .min(1, "At least one key must be provided")
+    keyDocuments: z
+      .array(z.record(z.unknown()))
+      .min(1, "At least one document must be provided")
       .optional()
-      .describe("Array of document keys to delete"),
+      .describe("Array of document objects with key field(s) set (e.g., [{\"id\": \"123\"}] where \"id\" is the key field)"),
   });
 
   server.tool(
     "deleteDocuments",
-    "⚠️ Delete specific documents from an index by their key values. This is permanent and cannot be undone. Provide an array of document keys to delete.",
+    "⚠️ Delete specific documents from an index by their key values. This is permanent and cannot be undone. Provide an array of document objects with the key field(s) set (e.g., [{\"id\": \"123\"}] where \"id\" is the index's key field).",
     DeleteDocumentsSchema,
     async (params: z.infer<typeof DeleteDocumentsSchema>) => {
-      const { indexName, keys } = params;
+      const { indexName, keyDocuments } = params;
       const client = getClient();
       
-      if (!indexName || !keys || keys.length === 0) {
-        return rf.formatError(new Error("Missing required parameters: indexName and keys"), {
+      if (!indexName || !keyDocuments || keyDocuments.length === 0) {
+        return rf.formatError(new Error("Missing required parameters: indexName and keyDocuments"), {
           tool: "deleteDocuments",
           indexName,
-          keyCount: keys?.length,
+          documentCount: keyDocuments?.length,
         });
       }
 
       const exec = rf.createToolExecutor<typeof params>("deleteDocuments", DEFAULT_TIMEOUT_MS);
-      return exec({ indexName, keys }, (p) => client.deleteDocuments(p.indexName!, p.keys!), {
+      return exec({ indexName, keyDocuments }, (p) => client.deleteDocuments(p.indexName!, p.keyDocuments!), {
         tool: "deleteDocuments",
         indexName,
-        keyCount: keys.length,
+        documentCount: keyDocuments.length,
       });
     },
     getToolHints("DELETE"),

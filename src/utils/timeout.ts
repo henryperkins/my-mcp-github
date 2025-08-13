@@ -10,13 +10,13 @@ export class TimeoutError extends Error {
 
 /**
  * Wraps an async operation with a timeout
- * @param promise The async operation to wrap
+ * @param promiseOrFn The async operation to wrap (Promise or function returning Promise)
  * @param timeoutMs Timeout in milliseconds
  * @param operation Operation name for error messages
  * @returns The result of the promise or throws TimeoutError
  */
 export async function withTimeout<T>(
-  promise: Promise<T>,
+  promiseOrFn: Promise<T> | (() => Promise<T>),
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
   operation: string = "operation"
 ): Promise<T> {
@@ -29,6 +29,8 @@ export async function withTimeout<T>(
   });
 
   try {
+    // Fix #7: Support both Promise and function returning Promise
+    const promise = typeof promiseOrFn === 'function' ? promiseOrFn() : promiseOrFn;
     const result = await Promise.race([promise, timeoutPromise]);
     clearTimeout(timeoutId!);
     return result;

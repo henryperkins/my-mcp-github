@@ -11,7 +11,6 @@ export interface FieldDefinition {
   sortable?: boolean;
   facetable?: boolean;
   retrievable?: boolean;
-  stored?: boolean;
   analyzer?: string;
   searchAnalyzer?: string;
   indexAnalyzer?: string;
@@ -185,9 +184,9 @@ export class IndexBuilder {
       sortable: false,
       facetable: false,
       retrievable: false, // Vectors are usually not retrieved
-      stored: true,
       dimensions,
-      vectorSearchProfile: profileName
+      vectorSearchProfile: profileName,
+      // Fix #2: Explicitly avoid setting 'stored' property - it's not allowed for vector fields
     });
     return this;
   }
@@ -368,7 +367,18 @@ export class IndexBuilder {
     if (!validation.valid) {
       throw new Error(`Index validation failed:\n${validation.errors.join('\n')}`);
     }
-    return this.definition;
+    
+    // Fix #2: Clean up any 'stored' properties from vector fields before returning
+    const cleanedDefinition = { ...this.definition };
+    cleanedDefinition.fields = this.definition.fields.map(field => {
+      if (field.type === 'Collection(Edm.Single)') {
+        const { stored, ...cleanField } = field as any;
+        return cleanField;
+      }
+      return field;
+    });
+    
+    return cleanedDefinition;
   }
   
   // Clone an existing index with modifications

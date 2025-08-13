@@ -20,24 +20,50 @@ function validateIndexDefinition(def: any): string[] {
     return errors;
   }
 
+  // Fix #9: Add proper field name pattern validation
+  const FIELD_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+
   // Key field checks
   const keyFields = def.fields.filter((f: any) => f?.key);
   if (keyFields.length === 0) {
     errors.push("Index must have exactly one key field");
   } else if (keyFields.length > 1) {
     errors.push("Index can only have one key field");
+  } else {
+    // Fix #9: Validate key field properties
+    const keyField = keyFields[0];
+    if (!keyField.filterable) {
+      errors.push(`Key field ${keyField.name} must be filterable`);
+    }
+    if (!keyField.sortable) {
+      errors.push(`Key field ${keyField.name} must be sortable`);
+    }
+    if (keyField.retrievable === false) {
+      errors.push(`Key field ${keyField.name} must be retrievable`);
+    }
   }
 
-  // Duplicate names and vector sanity
+  // Duplicate names and field validation
   const names = new Set<string>();
   for (const f of def.fields) {
+    // Fix #9: Validate field name pattern
+    if (!FIELD_NAME_PATTERN.test(f.name)) {
+      errors.push(`Invalid field name '${f.name}': must start with letter and contain only letters, numbers, and underscores`);
+    }
+    
     if (names.has(f.name)) {
       errors.push(`Duplicate field name: ${f.name}`);
     }
     names.add(f.name);
 
-    if (f.type === "Collection(Edm.Single)" && (!f.dimensions || f.dimensions < 1)) {
-      errors.push(`Vector field ${f.name} must have dimensions > 0`);
+    // Fix #9: Check for illegal 'stored' property on vector fields
+    if (f.type === "Collection(Edm.Single)") {
+      if (f.stored === true) {
+        errors.push(`Vector field ${f.name} cannot have 'stored: true' - this property is not allowed for vector fields`);
+      }
+      if (!f.dimensions || f.dimensions < 1) {
+        errors.push(`Vector field ${f.name} must have dimensions > 0`);
+      }
     }
   }
   return errors;
@@ -418,7 +444,6 @@ export function registerIndexTools(server: any, context: ToolContext) {
                 finalDefinition.fields.push({
                   ...nf,
                   retrievable: true,
-                  stored: true,
                 });
               }
             }
@@ -453,10 +478,9 @@ export function registerIndexTools(server: any, context: ToolContext) {
 
         finalDefinition.name = indexName;
 
-        // Include ETag for optimistic concurrency control
-        if (etag) {
-          finalDefinition["@odata.etag"] = etag;
-        }
+        // Fix #5: ETag will be passed as separate parameter, not in body
+        // Remove any @odata.etag from the definition
+        delete finalDefinition["@odata.etag"];
 
         if (validate) {
           // Prevent removals if indexDefinition provided (compat rule)
@@ -483,7 +507,8 @@ export function registerIndexTools(server: any, context: ToolContext) {
           }
         }
 
-        return rf.executeWithTimeout(client.createOrUpdateIndex(indexName, finalDefinition), DEFAULT_TIMEOUT_MS, "createOrUpdateIndex", {
+        // Fix #5: Pass etag as separate parameter for If-Match header
+        return rf.executeWithTimeout(client.createOrUpdateIndex(indexName, finalDefinition, etag), DEFAULT_TIMEOUT_MS, "createOrUpdateIndex", {
           indexName,
         });
       } catch (e) {

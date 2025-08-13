@@ -18,7 +18,10 @@ export class ResponseFormatter {
    * Format a successful response
    */
   async formatSuccess(result: any, options?: Partial<ResponseFormatterOptions>): Promise<any> {
-    const summarizer = options?.summarizer ?? this.getSummarizer?.() ?? undefined;
+    // Fix #12: Handle null summarizer properly - convert null to undefined
+    const summarizerResult = options?.summarizer ?? this.getSummarizer?.();
+    const summarizer = summarizerResult === null ? undefined : summarizerResult;
+    
     return formatResponse(result, {
       summarizer,
       structuredContent: options?.structuredContent ?? result,
@@ -62,7 +65,8 @@ export class ResponseFormatter {
       };
 
       try {
-        const result = await withTimeout(operation(params), timeoutMs, toolName);
+        // Fix #7: Pass function to withTimeout, not already-running promise
+        const result = await withTimeout(() => operation(params), timeoutMs, toolName);
         return this.formatSuccess(result);
       } catch (error) {
         return this.formatError(error, errorContext);

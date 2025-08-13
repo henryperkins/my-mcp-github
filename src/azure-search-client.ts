@@ -6,6 +6,7 @@ import type {
   SearchRequestBody,
   SearchResults,
   IndexBatch,
+  IndexAction,
   OperationResult,
   SearchDocument,
 } from "./types";
@@ -34,18 +35,25 @@ export class AzureSearchClient {
 
   private async request(path: string, options: RequestInit = {}): Promise<unknown> {
     const url = `${this.endpoint}${path}${path.includes('?') ? '&' : '?'}api-version=${this.apiVersion}`;
+    // Fix #8: Avoid duplicate headers by merging carefully
+    const headers: HeadersInit = {
+      ...options.headers,
+      'api-key': this.apiKey,
+      'Content-Type': 'application/json',
+    };
+    
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'api-key': this.apiKey,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Azure Search API error (${response.status}): ${errorText}`);
+      // Fix #10: Preserve status code in error for better error handling
+      const error: any = new Error(`Azure Search API error (${response.status}): ${errorText}`);
+      error.statusCode = response.status;
+      error.response = errorText;
+      throw error;
     }
 
     // Handle responses with no content
@@ -68,10 +76,21 @@ export class AzureSearchClient {
     return this.request(`/indexes/${indexName}`);
   }
 
-  async createOrUpdateIndex(indexName: string, indexDefinition: IndexDefinition): Promise<IndexDefinition | unknown> {
+  async createOrUpdateIndex(indexName: string, indexDefinition: IndexDefinition, etag?: string): Promise<IndexDefinition | unknown> {
+    // Fix #5: Use If-Match header for ETag, not in body
+    const headers: HeadersInit = {};
+    if (etag) {
+      headers['If-Match'] = etag;
+    }
+    
+    // Remove @odata.etag from body if present
+    const cleanDefinition = { ...indexDefinition };
+    delete cleanDefinition['@odata.etag'];
+    
     return this.request(`/indexes/${indexName}`, {
       method: 'PUT',
-      body: JSON.stringify(indexDefinition),
+      body: JSON.stringify(cleanDefinition),
+      headers,
     });
   }
 
@@ -229,41 +248,48 @@ export class AzureSearchClient {
 
   async uploadDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
-      value: documents.map(doc => ({
-        '@search.action': 'upload' as const,
-        ...doc
-      }))
+      value: documents.map(doc => 
+        doc['@search.action'] ? doc : {
+          '@search.action': 'upload' as const,
+          ...doc
+        }
+      ) as IndexAction[]
     };
     return this.indexDocuments(indexName, batch);
   }
 
   async mergeDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
-      value: documents.map(doc => ({
-        '@search.action': 'merge' as const,
-        ...doc
-      }))
+      value: documents.map(doc => 
+        doc['@search.action'] ? doc : {
+          '@search.action': 'merge' as const,
+          ...doc
+        }
+      ) as IndexAction[]
     };
     return this.indexDocuments(indexName, batch);
   }
 
   async mergeOrUploadDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
-      value: documents.map(doc => ({
-        '@search.action': 'mergeOrUpload' as const,
-        ...doc
-      }))
+      value: documents.map(doc => 
+        doc['@search.action'] ? doc : {
+          '@search.action': 'mergeOrUpload' as const,
+          ...doc
+        }
+      ) as IndexAction[]
     };
     return this.indexDocuments(indexName, batch);
   }
 
-  async deleteDocuments(indexName: string, keys: Array<Record<string, unknown> | string | number>): Promise<OperationResult> {
+  async deleteDocuments(indexName: string, keyDocuments: Array<Record<string, unknown>>): Promise<OperationResult> {
+    // keyDocuments should be objects with the key field(s) set, e.g., [{"id": "123"}, {"id": "456"}]
+    // where "id" is the actual key field name in the index schema
     const batch: IndexBatch = {
-      value: keys.map((key) =>
-        typeof key === 'object' && key !== null
-          ? { '@search.action': 'delete', ...(key as Record<string, unknown>) }
-          : { '@search.action': 'delete', key }
-      ) as IndexBatch["value"],
+      value: keyDocuments.map((doc) => {
+        // If it already has an action, use it as-is, otherwise add delete action
+        return doc['@search.action'] ? doc : { '@search.action': 'delete', ...doc };
+      }) as IndexAction[],
     };
     return this.indexDocuments(indexName, batch);
   }

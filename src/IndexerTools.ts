@@ -147,6 +147,12 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     excludedFileNameExtensions: z.string().optional().default(".png,.jpg,.gif,.svg,.ico"),
     dataToExtract: z.enum(["contentOnly", "contentAndMetadata", "storageMetadata"]).optional().default("contentAndMetadata"),
     indexStorageMetadataOnlyForOversizedDocuments: z.boolean().optional().default(true),
+    // Fix #6: Allow custom field mappings instead of hard-coding
+    fieldMappings: z.array(z.object({
+      sourceFieldName: z.string(),
+      targetFieldName: z.string(),
+      mappingFunction: z.object({ name: z.string() }).nullable().optional(),
+    })).optional().describe("Custom field mappings from source to index fields"),
   });
 
   server.tool(
@@ -164,6 +170,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
       excludedFileNameExtensions,
       dataToExtract,
       indexStorageMetadataOnlyForOversizedDocuments,
+      fieldMappings,
     }: z.infer<typeof CreateOrUpdateBlobIndexerSchema>) => {
       try {
         const client = getClient();
@@ -231,22 +238,12 @@ export function registerIndexerTools(server: any, context: ToolContext) {
             maxFailedItems: 10,
             maxFailedItemsPerBatch: 5,
           },
-          // These mappings assume a typical index: title, content, source, lastModified
-          fieldMappings: [
+          // Fix #6: Use custom field mappings if provided, otherwise minimal default
+          fieldMappings: fieldMappings || [
+            // Minimal default mapping - only map content which most indexes have
             {
-              sourceFieldName: "metadata_storage_name",
-              targetFieldName: "title",
-              mappingFunction: null,
-            },
-            { sourceFieldName: "content", targetFieldName: "content", mappingFunction: null },
-            {
-              sourceFieldName: "metadata_storage_path",
-              targetFieldName: "source",
-              mappingFunction: null,
-            },
-            {
-              sourceFieldName: "metadata_storage_last_modified",
-              targetFieldName: "lastModified",
+              sourceFieldName: "content",
+              targetFieldName: "content",
               mappingFunction: null,
             },
           ],
@@ -307,6 +304,8 @@ export function registerIndexerTools(server: any, context: ToolContext) {
         let done = false,
           attempts = 0;
         const max = maxAttempts ?? 60;
+        const progressUpdates: any[] = [];
+        
         while (!done && attempts++ < max) {
           await new Promise((r) => setTimeout(r, (pollSeconds ?? 5) * 1000));
           const s: any = await c.getIndexerStatus(indexerName);
@@ -315,6 +314,8 @@ export function registerIndexerTools(server: any, context: ToolContext) {
           const itemsProcessed = lr?.itemsProcessed ?? lr?.itemCount ?? 0;
           const itemsFailed = lr?.itemsFailed ?? lr?.failedItemCount ?? 0;
           const denom = Math.max(1, itemsProcessed + itemsFailed);
+          
+          // Fix #11: Compute and emit percentage progress
           const pct =
             status === "success"
               ? 1
@@ -323,14 +324,25 @@ export function registerIndexerTools(server: any, context: ToolContext) {
                 : status === "transientFailure"
                   ? 0
                   : 0.1;
+          
+          progressUpdates.push({
+            attempt: attempts,
+            status,
+            percentage: Math.round(pct * 100),
+            itemsProcessed,
+            itemsFailed,
+          });
+          
           done = status === "success" || status === "transientFailure";
         }
+        
         const finalStatus: any = await c.getIndexerStatus(indexerName);
         return rf.formatSuccess({
           indexerName,
           status: finalStatus?.lastResult?.status ?? "unknown",
           documentsProcessed: finalStatus?.lastResult?.itemsProcessed ?? finalStatus?.lastResult?.itemCount ?? 0,
           clientRequestId,
+          progressHistory: progressUpdates,
         });
       } catch (e) {
         return rf.formatError(e, { tool: "runIndexerWithProgress", indexerName });
