@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "deploy": "wrangler deploy",
+    "deploy:tail": "wrangler deploy -c tail-worker/wrangler.jsonc",
     "dev": "wrangler dev",
+    "dev:both": "wrangler dev -c wrangler.jsonc -c tail-worker/wrangler.jsonc",
     "start": "wrangler dev",
     "cf-typegen": "wrangler types",
     "type-check": "tsc --noEmit"

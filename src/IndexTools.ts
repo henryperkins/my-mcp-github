@@ -1,7 +1,7 @@
 // src/IndexTools.ts
 import { z } from "zod";
 import { IndexBuilder, IndexTemplates } from "./index-builder";
-import { formatResponse, normalizeError } from "./utils/response";
+import { formatResponse, formatToolError, normalizeError } from "./utils/response";
 import { resolveAnalyzerForLanguage } from "./utils/languageAnalyzers";
 import getToolHints from "./utils/toolHints";
 import { encodeCursor, decodeCursor } from "./utils/pagination";
@@ -177,10 +177,14 @@ export function registerIndexTools(server: any, context: ToolContext) {
           );
         }
 
-        return await formatResponse({ indexes: indexInfo, count: indexInfo.length }, { summarizer: getSummarizer?.() || undefined });
+        const structuredData = { indexes: indexInfo, count: indexInfo.length };
+        return await formatResponse(structuredData, { 
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: structuredData
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listIndexes" });
-        return await formatResponse(insight, { summarizer: getSummarizer?.() || undefined });
+        return formatToolError(insight);
       }
     }
   );
@@ -193,10 +197,13 @@ export function registerIndexTools(server: any, context: ToolContext) {
       try {
         const client = getClient();
         const idx = await client.getIndex(indexName);
-        return await formatResponse(idx, { summarizer: getSummarizer?.() || undefined });
+        return await formatResponse(idx, { 
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: idx
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getIndex", indexName });
-        return await formatResponse(insight, { summarizer: getSummarizer?.() || undefined });
+        return formatToolError(insight);
       }
     }
   );
@@ -209,10 +216,13 @@ export function registerIndexTools(server: any, context: ToolContext) {
       try {
         const client = getClient();
         const stats = await client.getIndexStats(indexName);
-        return await formatResponse(stats, { summarizer: getSummarizer?.() || undefined });
+        return await formatResponse(stats, { 
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: stats
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getIndexStats", indexName });
-        return await formatResponse(insight, { summarizer: getSummarizer?.() || undefined });
+        return formatToolError(insight);
       }
     }
   );
@@ -228,7 +238,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return await formatResponse({ success: true, message: `Index ${indexName} deleted` }, { summarizer: getSummarizer?.() || undefined });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "deleteIndex", indexName });
-        return await formatResponse(insight, { summarizer: getSummarizer?.() || undefined });
+        return formatToolError(insight);
       }
     }
   );
@@ -387,7 +397,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return await formatResponse(result, { summarizer: getSummarizer?.() || undefined });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "createIndex" });
-        return await formatResponse(insight, { summarizer: getSummarizer?.() || undefined });
+        return formatToolError(insight);
       }
     }
   );
@@ -520,7 +530,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         return await formatResponse(result, { summarizer: getSummarizer?.() || undefined });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "createOrUpdateIndex", indexName });
-        return await formatResponse(insight, { summarizer: getSummarizer?.() || undefined });
+        return formatToolError(insight);
       }
     },
     getToolHints("PUT")
@@ -543,13 +553,16 @@ export function registerIndexTools(server: any, context: ToolContext) {
           offset + pageSize < all.length ? offset + pageSize : null;
         const nextCursor =
           nextOffset !== null ? encodeCursor({ offset: nextOffset }) : undefined;
-        return await formatResponse({
+        const structuredData = {
           indexes: slice,
           ...(nextCursor && { nextCursor }),
+        };
+        return await formatResponse(structuredData, { 
+          structuredContent: structuredData
         });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listIndexesPaginated" });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     },
     getToolHints("GET")

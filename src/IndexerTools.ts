@@ -1,6 +1,6 @@
 // src/IndexerTools.ts
 import { z } from "zod";
-import { formatResponse, normalizeError } from "./utils/response";
+import { formatResponse, formatToolError, normalizeError } from "./utils/response";
 import getToolHints from "./utils/toolHints";
 
 type GetClient = () => any;
@@ -74,7 +74,7 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
         return await formatResponse({ indexers: names, count: names.length });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listIndexers" });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -90,7 +90,7 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
         return await formatResponse(ix);
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getIndexer", name });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -106,7 +106,7 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
         return await formatResponse({ success: true, message: `Indexer ${name} started` });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "runIndexer", name });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -122,7 +122,7 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
         return await formatResponse({ success: true, message: `Indexer ${name} reset` });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "resetIndexer", name });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -159,7 +159,7 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
         return await formatResponse(status);
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getIndexerStatus", name, historyLimit });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -255,7 +255,7 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
             dataSourceName: __dataSourceName,
             targetIndexName: __targetIndexName
           });
-          return await formatResponse(insight);
+          return formatToolError(insight);
         }
 
         const indexerDefinition = {
@@ -324,7 +324,7 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
           dataSourceName,
           targetIndexName
         });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -382,7 +382,7 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
         });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "runIndexerWithProgress", indexerName });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     },
     getToolHints("POST")

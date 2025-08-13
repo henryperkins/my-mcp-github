@@ -1,5 +1,6 @@
 // src/insights.ts
-import type { PipelineResponse } from "@azure/core-rest-pipeline";
+// import type { PipelineResponse } from "@azure/core-rest-pipeline";
+type PipelineResponse = any; // Using any since we don't have Azure SDK installed
 
 export type InsightCode =
   | "ERR_AUTH" | "ERR_NOT_FOUND" | "ERR_CONFLICT"

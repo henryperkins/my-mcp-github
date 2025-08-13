@@ -1,0 +1,15 @@
+/**
+ * Wrangler config for Tail Worker
+ * Deploy with: wrangler deploy -c tail-worker/wrangler.jsonc
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "azure-search-mcp-tail",
+  "main": "./src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "observability": { "enabled": true },
+  // Optional: set TAIL_ENDPOINT and TAIL_BEARER_TOKEN as secrets:
+  //   npx wrangler secret put TAIL_ENDPOINT -c tail-worker/wrangler.jsonc
+  //   npx wrangler secret put TAIL_BEARER_TOKEN -c tail-worker/wrangler.jsonc
+  "dev": { "port": 8790 }
+}

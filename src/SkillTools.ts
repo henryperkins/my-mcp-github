@@ -1,6 +1,6 @@
 // src/SkillTools.ts
 import { z } from "zod";
-import { formatResponse, normalizeError } from "./utils/response";
+import { formatResponse, formatToolError, normalizeError } from "./utils/response";
 
 type GetClient = () => any;
 
@@ -24,7 +24,7 @@ export function registerSkillTools(server: any, getClient: GetClient) {
         return await formatResponse({ skillsets: names, count: names.length });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listSkillsets" });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -40,7 +40,7 @@ export function registerSkillTools(server: any, getClient: GetClient) {
         return await formatResponse(ss);
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getSkillset", name });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );

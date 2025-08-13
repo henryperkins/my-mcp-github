@@ -1,6 +1,6 @@
 // src/DocumentTools.ts
 import { z } from "zod";
-import { formatResponse, normalizeError } from "./utils/response";
+import { formatResponse, formatToolError, normalizeError } from "./utils/response";
 import getToolHints from "./utils/toolHints";
 
 type GetClient = () => any;
@@ -51,10 +51,10 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
           ...(includeTotalCount && { count: true })
         };
         const result = await client.searchDocuments(indexName, searchParams);
-        return await formatResponse(result);
+        return await formatResponse(result, { structuredContent: result });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "searchDocuments", indexName });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     },
     { ...getToolHints("POST"), outputSchema: SearchResultsSchema }
@@ -68,10 +68,10 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const doc = await client.getDocument(indexName, key, select);
-        return await formatResponse(doc);
+        return await formatResponse(doc, { structuredContent: doc });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getDocument", indexName, key });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -84,10 +84,11 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const count = await client.getDocumentCount(indexName);
-        return await formatResponse({ count });
+        const structuredData = { count };
+        return await formatResponse(structuredData, { structuredContent: structuredData });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "countDocuments", indexName });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     },
     { ...getToolHints("GET"), outputSchema: z.object({ count: z.number() }) }
@@ -105,10 +106,10 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const result = await client.uploadDocuments(indexName, documents);
-        return await formatResponse(result);
+        return await formatResponse(result, { structuredContent: result });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "uploadDocuments", indexName });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -124,10 +125,10 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const result = await client.mergeDocuments(indexName, documents);
-        return await formatResponse(result);
+        return await formatResponse(result, { structuredContent: result });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "mergeDocuments", indexName });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -143,10 +144,10 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const result = await client.mergeOrUploadDocuments(indexName, documents);
-        return await formatResponse(result);
+        return await formatResponse(result, { structuredContent: result });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "mergeOrUploadDocuments", indexName });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -162,10 +163,10 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const result = await client.deleteDocuments(indexName, keys);
-        return await formatResponse(result);
+        return await formatResponse(result, { structuredContent: result });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "deleteDocuments", indexName });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );

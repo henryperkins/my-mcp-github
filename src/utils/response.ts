@@ -2,7 +2,11 @@
 // Utilities for consistent MCP response formatting and error normalization
 
 export type MCPTextContent = { type: "text"; text: string };
-export type MCPResponse = { content: MCPTextContent[] };
+export type MCPResponse = { 
+  content: MCPTextContent[]; 
+  structuredContent?: any; 
+  isError?: boolean; 
+};
 
 // Optional summarizer abstraction (e.g., AzureOpenAIClient.summarize)
 export type Summarizer = (text: string, maxTokens: number) => Promise<string>;
@@ -49,7 +53,7 @@ export function truncateLargeArrays(obj: any, maxSize: number): any {
  */
 export async function formatResponse(
   data: any,
-  opts?: { maxSize?: number; summarizer?: Summarizer; summaryMaxTokens?: number }
+  opts?: { maxSize?: number; summarizer?: Summarizer; summaryMaxTokens?: number; structuredContent?: any }
 ): Promise<MCPResponse> {
   const maxSize = opts?.maxSize ?? 20000;
   const summaryMaxTokens = opts?.summaryMaxTokens ?? 800;
@@ -96,7 +100,14 @@ export async function formatResponse(
     }
   }
 
-  return { content: [{ type: "text", text }] };
+  const response: MCPResponse = { content: [{ type: "text", text }] };
+  
+  // Add structuredContent if provided and response isn't too large
+  if (opts?.structuredContent && text.length <= maxSize) {
+    response.structuredContent = opts.structuredContent;
+  }
+  
+  return response;
 }
 
 /**
@@ -105,6 +116,18 @@ export async function formatResponse(
  */
 export function formatError(error: any): MCPResponse {
   return { content: [{ type: "text", text: `Error: ${String(error)}` }] };
+}
+
+/**
+ * Format tool execution errors with proper isError flag for MCP compliance.
+ * Use this in tool catch blocks to signal tool-level failures to clients.
+ */
+export function formatToolError(insight: string | { message: string; [key: string]: any }): MCPResponse {
+  const text = typeof insight === 'string' ? insight : JSON.stringify(insight, null, 2);
+  return {
+    content: [{ type: "text", text }],
+    isError: true
+  };
 }
 
 // Re-export normalizeError so tools can import only from utils (to avoid cycles)

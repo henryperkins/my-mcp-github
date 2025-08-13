@@ -1,6 +1,6 @@
 // src/DataTools.ts
 import { z } from "zod";
-import { formatResponse, normalizeError } from "./utils/response";
+import { formatResponse, formatToolError, normalizeError } from "./utils/response";
 
 type GetClient = () => any;
 
@@ -92,7 +92,7 @@ export function registerDataTools(server: any, getClient: GetClient) {
         return await formatResponse({ dataSources: names, count: names.length });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listDataSources" });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -108,7 +108,7 @@ export function registerDataTools(server: any, getClient: GetClient) {
         return await formatResponse(ds);
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getDataSource", name });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -189,7 +189,7 @@ export function registerDataTools(server: any, getClient: GetClient) {
             storageAccount: __storageAccount,
             containerName: __containerName
           });
-          return await formatResponse(insight);
+          return formatToolError(insight);
         }
 
         const dataSourceDefinition = {
@@ -223,7 +223,7 @@ export function registerDataTools(server: any, getClient: GetClient) {
           storageAccount,
           containerName
         });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -282,7 +282,7 @@ export function registerDataTools(server: any, getClient: GetClient) {
             containerName: __containerName,
             strategy: __strategy
           });
-          return await formatResponse(insight);
+          return formatToolError(insight);
         }
 
         const repoPath = __absoluteRepoPath || ".";
@@ -334,7 +334,7 @@ export function registerDataTools(server: any, getClient: GetClient) {
           containerName,
           strategy
         });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );

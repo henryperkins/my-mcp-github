@@ -1,6 +1,6 @@
 // src/SynonymTools.ts
 import { z } from "zod";
-import { formatResponse, normalizeError } from "./utils/response";
+import { formatResponse, formatToolError, normalizeError } from "./utils/response";
 
 type GetClient = () => any;
 
@@ -26,7 +26,7 @@ export function registerSynonymTools(server: any, getClient: GetClient) {
         return await formatResponse({ synonymMaps: names, count: names.length });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listSynonymMaps" });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -42,7 +42,7 @@ export function registerSynonymTools(server: any, getClient: GetClient) {
         return await formatResponse(sm);
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getSynonymMap", name });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -71,7 +71,7 @@ export function registerSynonymTools(server: any, getClient: GetClient) {
           name,
           synonymMapDefinition
         });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );
@@ -87,7 +87,7 @@ export function registerSynonymTools(server: any, getClient: GetClient) {
         return await formatResponse({ success: true, message: `Synonym map ${name} deleted` });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "deleteSynonymMap", name });
-        return await formatResponse(insight);
+        return formatToolError(insight);
       }
     }
   );

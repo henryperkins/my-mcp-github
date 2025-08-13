@@ -31,7 +31,8 @@ class AzureSearchMCP extends McpAgent {
       prompts: {},
       elicitation: {},
       resources: { subscribe: true, listChanged: true },
-      logging: { levels: ["debug","info","warning","error"] }
+      logging: { levels: ["debug","info","warning","error"] },
+      tools: { listChanged: true }
     }
   });
 
@@ -92,7 +93,7 @@ class AzureSearchMCP extends McpAgent {
 
     // Resources
     registerResources(this.server, () => this.getClient());
-    // this.server.notification("resources/listChanged", { reason: "startup" });
+    // this.server.notification("notifications/resources/list_changed", { reason: "startup" });
 
     // ---------------- PROMPTS ----------------
     // Prompts provide guided workflows for complex operations
