@@ -1,6 +1,7 @@
 // src/DocumentTools.ts
 import { z } from "zod";
 import { formatResponse, normalizeError } from "./utils/response";
+import getToolHints from "./utils/toolHints";
 
 type GetClient = () => any;
 
@@ -12,6 +13,12 @@ type GetClient = () => any;
  */
 export function registerDocumentTools(server: any, getClient: GetClient) {
   // ---------------- DOCUMENTS ----------------
+  const SearchResultsSchema = z.object({
+    value: z.array(z.any()),
+    "@odata.count": z.number().optional(),
+    "@search.nextPageParameters": z.any().optional(),
+  }).strict();
+
   server.tool(
     "searchDocuments",
     "Search for documents using keywords, filters, and sorting. Supports OData filter syntax, pagination (max 50 results per request), field selection, and relevance scoring. Use '*' to retrieve all documents.",
@@ -43,13 +50,14 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
           ...(orderBy && { orderBy }),
           ...(includeTotalCount && { count: true })
         };
-        const results = await client.searchDocuments(indexName, searchParams);
-        return await formatResponse(results);
+        const result = await client.searchDocuments(indexName, searchParams);
+        return await formatResponse(result);
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "searchDocuments", indexName });
         return await formatResponse(insight);
       }
-    }
+    },
+    { ...getToolHints("POST"), outputSchema: SearchResultsSchema }
   );
 
   server.tool(
@@ -81,7 +89,8 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
         const { insight } = normalizeError(e, { tool: "countDocuments", indexName });
         return await formatResponse(insight);
       }
-    }
+    },
+    { ...getToolHints("GET"), outputSchema: z.object({ count: z.number() }) }
   );
 
   // ---------------- DOCUMENT OPERATIONS ----------------

@@ -1,6 +1,7 @@
 // src/IndexerTools.ts
 import { z } from "zod";
 import { formatResponse, normalizeError } from "./utils/response";
+import getToolHints from "./utils/toolHints";
 
 type GetClient = () => any;
 
@@ -326,5 +327,64 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
         return await formatResponse(insight);
       }
     }
+  );
+
+  // Progress-emitting run
+  server.tool(
+    "runIndexerWithProgress",
+    "Run an indexer and emit progress notifications until done.",
+    {
+      indexerName: z.string(),
+      clientRequestId: z.string().uuid().optional(),
+      pollSeconds: z.number().int().positive().max(30).default(5),
+      maxAttempts: z.number().int().positive().max(600).default(60),
+    },
+    async ({ indexerName, clientRequestId, pollSeconds, maxAttempts }: any) => {
+      try {
+        const c = getClient();
+        const headers = clientRequestId
+          ? { "x-ms-client-request-id": clientRequestId }
+          : {};
+        await c.runIndexer(indexerName, { headers });
+        // await server.notification("progress", {
+        //   operation: `indexer:${indexerName}`,
+        //   progress: 0.1,
+        //   message: "started",
+        // });
+
+        let done = false, attempts = 0;
+        while (!done && attempts++ < maxAttempts) {
+          await new Promise(r => setTimeout(r, (pollSeconds ?? 5) * 1000));
+          const s = await c.getIndexerStatus(indexerName);
+          const lr = s?.lastResult;
+          const status = lr?.status ?? "unknown";
+          const itemsProcessed = lr?.itemsProcessed ?? lr?.itemCount ?? 0;
+          const itemsFailed = lr?.itemsFailed ?? lr?.failedItemCount ?? 0;
+          const denom = Math.max(1, itemsProcessed + itemsFailed);
+          const pct =
+            status === "success" ? 1 :
+            status === "inProgress" ? Math.min(0.9, itemsProcessed / denom) :
+            status === "transientFailure" ? 0 :
+            0.1;
+          // await server.notification("progress", {
+          //   operation: `indexer:${indexerName}`,
+          //   progress: pct,
+          //   message: status,
+          // });
+          done = status === "success" || status === "transientFailure";
+        }
+        const finalStatus = await c.getIndexerStatus(indexerName);
+        return await formatResponse({
+          indexerName,
+          status: finalStatus?.lastResult?.status ?? "unknown",
+          documentsProcessed: finalStatus?.lastResult?.itemsProcessed ?? finalStatus?.lastResult?.itemCount ?? 0,
+          clientRequestId,
+        });
+      } catch (e) {
+        const { insight } = normalizeError(e, { tool: "runIndexerWithProgress", indexerName });
+        return await formatResponse(insight);
+      }
+    },
+    getToolHints("POST")
   );
 }

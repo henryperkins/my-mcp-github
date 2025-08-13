@@ -3,6 +3,7 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { AzureSearchClient } from "./azure-search-client";
+import { registerResources } from "./resources";
 import { AzureOpenAIClient } from "./azure-openai-client";
 import type { ToolContext } from "./types";
 import { registerIndexTools } from "./IndexTools";
@@ -28,7 +29,9 @@ class AzureSearchMCP extends McpAgent {
     version: "1.3.0",
     capabilities: {
       prompts: {},
-      elicitation: {}
+      elicitation: {},
+      resources: { subscribe: true, listChanged: true },
+      logging: { levels: ["debug","info","warning","error"] }
     }
   });
 
@@ -87,6 +90,9 @@ class AzureSearchMCP extends McpAgent {
     registerSkillTools(this.server, () => this.getClient());
     registerSynonymTools(this.server, () => this.getClient());
 
+    // Resources
+    registerResources(this.server, () => this.getClient());
+    // this.server.notification("resources/listChanged", { reason: "startup" });
 
     // ---------------- PROMPTS ----------------
     // Prompts provide guided workflows for complex operations
@@ -480,6 +486,12 @@ Available templates: documentSearch, productCatalog, hybridSearch, knowledgeBase
         return { messages };
       }
     );
+
+    // (Optional) logging controls
+    // this.server.method("logging/setLevel", ({ level }: any) => {
+    //   // no-op placeholder; wire to utils/logging if desired
+    //   return { ok: true };
+    // });
   }
 }
 

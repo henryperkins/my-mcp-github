@@ -3,6 +3,8 @@ import { z } from "zod";
 import { IndexBuilder, IndexTemplates } from "./index-builder";
 import { formatResponse, normalizeError } from "./utils/response";
 import { resolveAnalyzerForLanguage } from "./utils/languageAnalyzers";
+import getToolHints from "./utils/toolHints";
+import { encodeCursor, decodeCursor } from "./utils/pagination";
 import type { ToolContext } from "./types";
 import { generateParameterElicitation } from "./tool-elicitation";
 
@@ -520,6 +522,36 @@ export function registerIndexTools(server: any, context: ToolContext) {
         const { insight } = normalizeError(e, { tool: "createOrUpdateIndex", indexName });
         return await formatResponse(insight, { summarizer: getSummarizer?.() || undefined });
       }
-    }
+    },
+    getToolHints("PUT")
+  );
+
+  server.tool(
+    "listIndexesPaginated",
+    "List indexes with an opaque MCP-style cursor.",
+    {
+      cursor: z.string().optional().describe("Opaque pagination cursor"),
+      pageSize: z.number().int().positive().max(200).default(50),
+    },
+    async ({ cursor, pageSize }: any) => {
+      try {
+        const { offset = 0 } = decodeCursor(cursor);
+        const client = context.getClient();
+        const all = await client.listIndexes();
+        const slice = all.slice(offset, offset + pageSize);
+        const nextOffset =
+          offset + pageSize < all.length ? offset + pageSize : null;
+        const nextCursor =
+          nextOffset !== null ? encodeCursor({ offset: nextOffset }) : undefined;
+        return await formatResponse({
+          indexes: slice,
+          ...(nextCursor && { nextCursor }),
+        });
+      } catch (e) {
+        const { insight } = normalizeError(e, { tool: "listIndexesPaginated" });
+        return await formatResponse(insight);
+      }
+    },
+    getToolHints("GET")
   );
 }

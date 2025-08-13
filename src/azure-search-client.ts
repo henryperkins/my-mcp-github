@@ -9,6 +9,18 @@ export class AzureSearchClient {
     this.apiKey = apiKey;
   }
 
+  private json(o: any) {
+    return JSON.stringify(o);
+  }
+
+  private headers(extra: Record<string,string> = {}) {
+    return {
+      "api-key": this.apiKey,
+      "content-type": "application/json",
+      ...extra,
+    };
+  }
+
   private async request(path: string, options: RequestInit = {}): Promise<any> {
     const url = `${this.endpoint}${path}${path.includes('?') ? '&' : '?'}api-version=${this.apiVersion}`;
     const response = await fetch(url, {
@@ -235,5 +247,64 @@ export class AzureSearchClient {
       }))
     };
     return this.indexDocuments(indexName, batch);
+  }
+
+  // -------- Service/Stats --------
+  async getServiceStatistics() {
+    return this.request(`/servicestats`);
+  }
+  async getIndexStatsSummary() {
+    return this.request(`/indexstats`);
+  }
+
+  // -------- Analyze / Suggest / Autocomplete --------
+  async analyzeText(indexName: string, body: any) {
+    return this.request(`/indexes/${encodeURIComponent(indexName)}/search.analyze`, {
+      method: "POST",
+      body: this.json(body),
+      headers: this.headers(),
+    });
+  }
+  async suggest(indexName: string, body: any) {
+    return this.request(`/indexes/${encodeURIComponent(indexName)}/docs/suggest`, {
+      method: "POST",
+      body: this.json(body),
+      headers: this.headers(),
+    });
+  }
+  async autocomplete(indexName: string, body: any) {
+    return this.request(`/indexes/${encodeURIComponent(indexName)}/docs/autocomplete`, {
+      method: "POST",
+      body: this.json(body),
+      headers: this.headers(),
+    });
+  }
+
+  // -------- Knowledge Agents (preview) --------
+  async listAgents() {
+    return this.request(`/agents`);
+  }
+  async getAgent(agentName: string) {
+    return this.request(`/agents('${encodeURIComponent(agentName)}')`);
+  }
+  async upsertAgent(agentName: string, agent: any, headers: Record<string,string> = {}) {
+    return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
+      method: "PUT",
+      headers: this.headers(headers),
+      body: this.json(agent),
+    });
+  }
+  async createAgent(agent: any) {
+    return this.request(`/agents`, {
+      method: "POST",
+      headers: this.headers(),
+      body: this.json(agent),
+    });
+  }
+  async deleteAgent(agentName: string, headers: Record<string,string> = {}) {
+    return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
+      method: "DELETE",
+      headers: this.headers(headers),
+    });
   }
 }
