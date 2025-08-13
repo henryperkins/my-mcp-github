@@ -221,7 +221,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
           });
         }
 
-        const indexerDefinition = {
+        const indexerDefinition: any = {
           name: __name,
           dataSourceName: __dataSourceName,
           targetIndexName: __targetIndexName,
@@ -238,18 +238,35 @@ export function registerIndexerTools(server: any, context: ToolContext) {
             maxFailedItems: 10,
             maxFailedItemsPerBatch: 5,
           },
-          // Fix #6: Use custom field mappings if provided, otherwise minimal default
-          fieldMappings: fieldMappings || [
-            // Minimal default mapping - only map content which most indexes have
+          description: `Indexer for '${__dataSourceName}' to '${__targetIndexName}'`,
+        };
+
+        // Fix #6: Use custom field mappings if provided, otherwise minimal default
+        // Clean up mappings to remove null values
+        if (fieldMappings && fieldMappings.length > 0) {
+          indexerDefinition.fieldMappings = fieldMappings.map(fm => {
+            const cleaned: any = {
+              sourceFieldName: fm.sourceFieldName,
+              targetFieldName: fm.targetFieldName,
+            };
+            // Only include mappingFunction if it's not null
+            if (fm.mappingFunction) {
+              cleaned.mappingFunction = fm.mappingFunction;
+            }
+            return cleaned;
+          });
+        } else {
+          // Minimal default mapping - only map content which most indexes have
+          indexerDefinition.fieldMappings = [
             {
               sourceFieldName: "content",
               targetFieldName: "content",
-              mappingFunction: null,
             },
-          ],
-          outputFieldMappings: [],
-          description: `Indexer for '${__dataSourceName}' to '${__targetIndexName}'`,
-        };
+          ];
+        }
+        
+        // Don't include outputFieldMappings unless we have some
+        // Azure Search REST API rejects empty arrays
 
         return rf.executeWithTimeout(
           (async () => {
@@ -310,29 +327,64 @@ export function registerIndexerTools(server: any, context: ToolContext) {
           await new Promise((r) => setTimeout(r, (pollSeconds ?? 5) * 1000));
           const s: any = await c.getIndexerStatus(indexerName);
           const lr = s?.lastResult;
-          const status = lr?.status ?? "unknown";
-          const itemsProcessed = lr?.itemsProcessed ?? lr?.itemCount ?? 0;
-          const itemsFailed = lr?.itemsFailed ?? lr?.failedItemCount ?? 0;
-          const denom = Math.max(1, itemsProcessed + itemsFailed);
-          
-          // Fix #11: Compute and emit percentage progress
-          const pct =
-            status === "success"
-              ? 1
-              : status === "inProgress"
-                ? Math.min(0.9, itemsProcessed / denom)
-                : status === "transientFailure"
-                  ? 0
-                  : 0.1;
-          
+          const status = lr?.status ?? s?.status ?? "unknown";
+
+          // Work counters
+          const itemsProcessed = Number(lr?.itemsProcessed ?? lr?.itemCount ?? 0);
+          const itemsFailed = Number(lr?.itemsFailed ?? lr?.failedItemCount ?? 0);
+          const processedSoFar = itemsProcessed + itemsFailed;
+
+          // Heuristic total: use last successful run's item count if available
+          const history = Array.isArray(s?.executionHistory) ? s.executionHistory : [];
+          const historyTotals = history
+            .filter((e: any) => e?.status === "success")
+            .map((e: any) => Number(e?.itemsProcessed ?? e?.itemCount ?? 0))
+            .filter((n: number) => Number.isFinite(n) && n > 0);
+
+          const baselineTotal = historyTotals.length > 0 ? Math.max(...historyTotals) : 0;
+
+          // Compute progress with clear basis and without misleading caps
+          let basis: "final" | "estimatedTotalFromHistory" | "timeBased" | "unknown" = "unknown";
+          let indeterminate = false;
+          let percentageNum: number | null = null;
+          let totalEstimated: number | null = null;
+          let remainingEstimated: number | null = null;
+
+          if (status === "success") {
+            basis = "final";
+            indeterminate = false;
+            percentageNum = 100;
+            totalEstimated = Math.max(baselineTotal, processedSoFar);
+            remainingEstimated = 0;
+          } else if (baselineTotal > 0) {
+            basis = "estimatedTotalFromHistory";
+            totalEstimated = baselineTotal;
+            const fraction = processedSoFar / baselineTotal;
+            const pct = Math.max(0.01, Math.min(0.99, Number.isFinite(fraction) ? fraction : 0));
+            percentageNum = Math.round(pct * 100);
+            remainingEstimated = Math.max(0, baselineTotal - processedSoFar);
+          } else {
+            // No reliable total is known; provide a conservative, time-based estimate
+            basis = "timeBased";
+            indeterminate = true;
+            const pct = Math.min(95, Math.max(5, Math.round((attempts / max) * 90)));
+            percentageNum = pct;
+          }
+
           progressUpdates.push({
             attempt: attempts,
             status,
-            percentage: Math.round(pct * 100),
+            percentage: percentageNum,
+            indeterminate,
+            basis,
             itemsProcessed,
             itemsFailed,
+            processedSoFar,
+            totalEstimated,
+            remainingEstimated,
+            timestamp: new Date().toISOString(),
           });
-          
+
           done = status === "success" || status === "transientFailure";
         }
         

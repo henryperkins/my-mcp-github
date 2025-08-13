@@ -384,17 +384,7 @@ export class IndexBuilder {
       throw new Error(`Index validation failed:\n${validation.errors.join('\n')}`);
     }
     
-    // Fix #2: Clean up any 'stored' properties from vector fields before returning
-    const cleanedDefinition = { ...this.definition };
-    cleanedDefinition.fields = this.definition.fields.map(field => {
-      if (field.type === 'Collection(Edm.Single)') {
-        const { stored, ...cleanField } = field as any;
-        return cleanField;
-      }
-      return field;
-    });
-    
-    return cleanedDefinition;
+    return this.definition;
   }
   
   // Clone an existing index with modifications

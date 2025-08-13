@@ -1,4 +1,5 @@
 // Simple Azure Search REST API client for Cloudflare Workers
+import { AZURE_SEARCH_API_VERSION } from "./constants";
 import type {
   IndexDefinition,
   SynonymMap,
@@ -14,7 +15,6 @@ import type {
 export class AzureSearchClient {
   private endpoint: string;
   private apiKey: string;
-  private apiVersion = "2025-08-01-preview";
 
   constructor(endpoint: string, apiKey: string) {
     this.endpoint = endpoint.replace(/\/$/, ''); // Remove trailing slash
@@ -34,7 +34,7 @@ export class AzureSearchClient {
   }
 
   private async request(path: string, options: RequestInit = {}): Promise<unknown> {
-    const url = `${this.endpoint}${path}${path.includes('?') ? '&' : '?'}api-version=${this.apiVersion}`;
+    const url = `${this.endpoint}${path}${path.includes('?') ? '&' : '?'}api-version=${AZURE_SEARCH_API_VERSION}`;
     // Fix #8: Avoid duplicate headers by merging carefully
     // Build headers defensively – avoid duplicates (case-insensitive) that Cloudflare
     // treats as immutable and will throw “immutable headers”.
@@ -91,7 +91,11 @@ export class AzureSearchClient {
       // Fix #10: Preserve status code in error for better error handling
       const error: any = new Error(`Azure Search API error (${response!.status}): ${errorText}`);
       error.statusCode = response!.status;
-      error.response = errorText;
+      error.response = {
+        status: response!.status,
+        headers: response!.headers,
+        body: errorText
+      };
       throw error;
     }
 

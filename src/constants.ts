@@ -19,6 +19,7 @@ export const DEFAULT_POLL_INTERVAL_MS = 5000; // 5 seconds
 // Response size limits
 export const MAX_RESPONSE_SIZE_BYTES = 20 * 1024; // 20KB threshold for summarization
 export const MAX_RESPONSE_CHARS = 30000; // Maximum characters in response
+export const DEFAULT_SUMMARY_MAX_TOKENS = 800; // Default max tokens for summarization
 
 // Azure Search limits
 export const MAX_DOCUMENTS_PER_BATCH = 1000;

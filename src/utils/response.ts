@@ -1,16 +1,17 @@
 // src/utils/response.ts
 /* eslint-disable @typescript-eslint/consistent-type-imports */
-// src/utils/response.ts
+
 import { withTimeout } from "./timeout";
-import { DEFAULT_TIMEOUT_MS } from "../constants";
+import { DEFAULT_TIMEOUT_MS, MAX_RESPONSE_SIZE_BYTES, DEFAULT_SUMMARY_MAX_TOKENS } from "../constants";
 import { normalizeError } from "../insights";
+
 // Utilities for consistent MCP response formatting and error normalization
 
 export type MCPTextContent = { type: "text"; text: string };
-export type MCPResponse = { 
-  content: MCPTextContent[]; 
-  structuredContent?: any; 
-  isError?: boolean; 
+export type MCPResponse = {
+  content: MCPTextContent[];
+  structuredContent?: any;
+  isError?: boolean;
 };
 
 // Optional summarizer abstraction (e.g., AzureOpenAIClient.summarize)
@@ -24,7 +25,7 @@ export function truncateLargeArrays(obj: any, maxSize: number): any {
   const str = JSON.stringify(obj);
   if (str.length <= maxSize) return obj;
 
-  const result = { ...obj };
+  const result: any = { ...obj };
 
   // Execution history (indexers)
   if (result.executionHistory && Array.isArray(result.executionHistory)) {
@@ -55,7 +56,7 @@ export function truncateLargeArrays(obj: any, maxSize: number): any {
  * Format any data into an MCP text response. If content is too large:
  *  - Arrays: returns truncated preview and pagination hint
  *  - Objects: attempts summarization if a summarizer is provided; falls back to truncation
- * 
+ *
  * Format options:
  *  - "full": Return complete data (default)
  *  - "summary": Force summarization if possible
@@ -63,21 +64,21 @@ export function truncateLargeArrays(obj: any, maxSize: number): any {
  */
 export async function formatResponse(
   data: any,
-  opts?: { 
-    maxSize?: number; 
-    summarizer?: Summarizer; 
-    summaryMaxTokens?: number; 
+  opts?: {
+    maxSize?: number;
+    summarizer?: Summarizer;
+    summaryMaxTokens?: number;
     structuredContent?: any;
     format?: "full" | "summary" | "minimal";
   }
 ): Promise<MCPResponse> {
-  const maxSize = opts?.maxSize ?? 20000;
-  const summaryMaxTokens = opts?.summaryMaxTokens ?? 800;
+  const maxSize = opts?.maxSize ?? MAX_RESPONSE_SIZE_BYTES;
+  const summaryMaxTokens = opts?.summaryMaxTokens ?? DEFAULT_SUMMARY_MAX_TOKENS;
   const format = opts?.format ?? "full";
 
   // Apply format-specific transformations
   let formattedData = data;
-  
+
   if (format === "minimal" && typeof data === "object" && data !== null) {
     // Extract only essential fields for minimal format
     if (Array.isArray(data)) {
@@ -85,7 +86,7 @@ export async function formatResponse(
         if (typeof item === "object" && item !== null) {
           // Keep only key fields
           const minimal: any = {};
-          ['name', 'id', 'key', 'title', 'status', 'type', 'count', 'message'].forEach(field => {
+          ["name", "id", "key", "title", "status", "type", "count", "message"].forEach((field) => {
             if (field in item) minimal[field] = item[field];
           });
           return Object.keys(minimal).length > 0 ? minimal : item;
@@ -97,16 +98,16 @@ export async function formatResponse(
           items: formattedData,
           totalCount: data.length,
           format: "minimal",
-          note: "Showing first 5 items with essential fields only"
+          note: "Showing first 5 items with essential fields only",
         };
       }
-    } else if (data.value && Array.isArray(data.value)) {
+    } else if ((data as any).value && Array.isArray((data as any).value)) {
       // Handle OData responses
       formattedData = {
         ...data,
-        value: data.value.slice(0, 5),
+        value: (data as any).value.slice(0, 5),
         format: "minimal",
-        note: "Minimal format - showing first 5 items"
+        note: "Minimal format - showing first 5 items",
       };
     }
   } else if (format === "summary" && opts?.summarizer) {
@@ -118,14 +119,14 @@ export async function formatResponse(
         format: "summary",
         summary,
         originalSize: fullText.length,
-        message: "Response summarized as requested"
+        message: "Response summarized as requested",
       };
     } catch {
       // Fall back to truncation if summarization fails
       formattedData = truncateLargeArrays(data, maxSize / 2);
     }
   }
-  
+
   const text = typeof formattedData === "string" ? formattedData : JSON.stringify(formattedData, null, 2);
 
   if (text.length > maxSize && format !== "summary") {
@@ -137,7 +138,7 @@ export async function formatResponse(
         totalItems: data.length,
         truncated: true,
         firstItems: data.slice(0, 10),
-        recommendation: "Use skip and top parameters to paginate through results"
+        recommendation: "Use skip and top parameters to paginate through results",
       };
       return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
     }
@@ -151,10 +152,8 @@ export async function formatResponse(
             summarized: true,
             originalSize: text.length,
             summary,
-            message:
-              "Response was too large and has been intelligently summarized.",
-            hint:
-              "To see specific sections, use targeted queries or pagination parameters."
+            message: "Response was too large and has been intelligently summarized.",
+            hint: "To see specific sections, use targeted queries or pagination parameters.",
           };
           return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
         } catch {
@@ -169,12 +168,12 @@ export async function formatResponse(
   }
 
   const response: MCPResponse = { content: [{ type: "text", text }] };
-  
+
   // Add structuredContent if provided and response isn't too large
   if (opts?.structuredContent && text.length <= maxSize) {
     response.structuredContent = opts.structuredContent;
   }
-  
+
   return response;
 }
 
@@ -190,19 +189,20 @@ export function formatError(error: any): MCPResponse {
  * Format tool execution errors with proper isError flag for MCP compliance.
  * Use this in tool catch blocks to signal tool-level failures to clients.
  */
-export function formatToolError(insight: string | { message: string; [key: string]: any }): MCPResponse {
-  const text = typeof insight === 'string' ? insight : JSON.stringify(insight, null, 2);
+export function formatToolError(
+  insight: string | { message: string;[key: string]: any }
+): MCPResponse {
+  const text = typeof insight === "string" ? insight : JSON.stringify(insight, null, 2);
   return {
     content: [{ type: "text", text }],
-    isError: true
+    isError: true,
   };
 }
 
-// Re-export normalizeError so tools can import only from utils (to avoid cycles)
 /**
  * Map HTTP-ish errors to MCP error envelopes.
  */
-export function formatMcpError(err: any, requestId?: string) {
+export function formatMcpError(err: any, requestId?: string): MCPResponse {
   const status = err?.status ?? err?.response?.status;
   const map: Record<number, string> = {
     400: "invalid_request",
@@ -213,7 +213,9 @@ export function formatMcpError(err: any, requestId?: string) {
     412: "conflict",
     429: "rate_limited",
   };
-  const error = map[status] ?? (status >= 500 ? "server_error" : "unknown_error");
+  const error =
+    map[status as number] ??
+    (typeof status === "number" && status >= 500 ? "server_error" : "unknown_error");
   const body = {
     error,
     status,
@@ -234,7 +236,7 @@ export class ResponseFormatter {
     private readonly getSummarizer?: () =>
       | ((text: string, maxTokens?: number) => Promise<string>)
       | null
-  ) {}
+  ) { }
 
   /**
    * Format a successful response
@@ -245,14 +247,12 @@ export class ResponseFormatter {
       summarizer?: ((text: string, maxTokens?: number) => Promise<string>) | null;
       structuredContent?: any;
     }
-  ): Promise<any> {
+  ): Promise<MCPResponse> {
     const summarizerCandidate =
-      options?.summarizer !== undefined
-        ? options.summarizer
-        : this.getSummarizer?.();
+      options?.summarizer !== undefined ? options.summarizer : this.getSummarizer?.();
 
     const summarizer =
-      summarizerCandidate === null ? undefined : summarizerCandidate;
+      summarizerCandidate === null ? undefined : summarizerCandidate ?? undefined;
 
     return formatResponse(result, {
       summarizer,
@@ -263,7 +263,7 @@ export class ResponseFormatter {
   /**
    * Format an error response with context
    */
-  formatError(error: any, context: Record<string, any>): any {
+  formatError(error: any, context: Record<string, any>): MCPResponse {
     const { insight } = normalizeError(error, context);
     return formatToolError(insight);
   }
@@ -277,9 +277,10 @@ export class ResponseFormatter {
     timeoutMs: number = DEFAULT_TIMEOUT_MS,
     operationName: string,
     errorContext: Record<string, any>
-  ): Promise<any> {
+  ): Promise<MCPResponse> {
     try {
-      const op = typeof operation === "function" ? (operation as () => Promise<T>) : () => operation;
+      const op =
+        typeof operation === "function" ? (operation as () => Promise<T>) : () => operation;
       const result = await withTimeout(op, timeoutMs, operationName);
       return this.formatSuccess(result);
     } catch (error) {
@@ -290,15 +291,12 @@ export class ResponseFormatter {
   /**
    * Create a standard tool executor with timeout and error handling
    */
-  createToolExecutor<TParams>(
-    toolName: string,
-    timeoutMs: number = DEFAULT_TIMEOUT_MS
-  ) {
+  createToolExecutor<TParams>(toolName: string, timeoutMs: number = DEFAULT_TIMEOUT_MS) {
     return async (
       params: TParams,
       operation: (params: TParams) => Promise<any>,
       additionalContext?: Record<string, any>
-    ): Promise<any> => {
+    ): Promise<MCPResponse> => {
       const errorContext = {
         tool: toolName,
         ...params,
@@ -315,5 +313,5 @@ export class ResponseFormatter {
   }
 }
 
-export { normalizeError } from "../insights";
-export { ResponseFormatter, formatMcpError };
+// Re-export normalizeError so tools can import only from utils (to avoid cycles)
+export { normalizeError };

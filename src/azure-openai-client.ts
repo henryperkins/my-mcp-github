@@ -1,9 +1,11 @@
 // Azure OpenAI client for intelligent summarization
+import { AZURE_OPENAI_API_VERSION } from "./constants";
+import { log } from "./utils/logging";
+
 export class AzureOpenAIClient {
   private endpoint: string;
   private apiKey: string;
   private deploymentName: string;
-  private apiVersion = "2024-08-01-preview";
 
   constructor(endpoint: string, apiKey: string, deploymentName: string = "gpt-4o-mini") {
     this.endpoint = endpoint.replace(/\/$/, ''); // Remove trailing slash
@@ -12,7 +14,7 @@ export class AzureOpenAIClient {
   }
 
   async summarize(content: string, maxTokens: number = 500): Promise<string> {
-    const url = `${this.endpoint}/openai/deployments/${this.deploymentName}/chat/completions?api-version=${this.apiVersion}`;
+    const url = `${this.endpoint}/openai/deployments/${this.deploymentName}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
     
     const systemPrompt = `You are a technical documentation summarizer. Summarize the following content concisely, preserving key technical details, structure, and important values. Focus on:
 1. Main purpose/functionality
@@ -40,7 +42,7 @@ Keep the summary structured and easy to scan.`;
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Azure OpenAI API error (${response.status}): ${errorText}`);
+      log("error", `Azure OpenAI API error (${response.status})`, { body: errorText });
       // Return original content if summarization fails
       return content;
     }
