@@ -85,25 +85,47 @@ export function normalizeError(e: any, context?: Record<string, any>): { insight
     };
   }
 
-  // Heuristic refinements
+  // Heuristic refinements with enhanced recommendations
   if (/allowIndexDowntime/i.test(msg) || /analyzer|tokenizer|vectorizer.+cannot/i.test(msg)) {
     insight.code = "ERR_DOWNTIME_REQUIRED";
     insight.recommendation =
-      "Retry createOrUpdateIndex with { allowIndexDowntime: true } or plan a rebuild/alias swap for breaking changes.";
+      "Retry createOrUpdateIndex with { allowIndexDowntime: true } or plan a rebuild/alias swap for breaking changes. Consider using createOrUpdateIndex tool with mergeWithExisting: false.";
   }
   if (/dimension/i.test(msg) && /vector/i.test(msg)) {
     insight.code = "ERR_VECTOR_DIM_MISMATCH";
     insight.recommendation =
-      "Ensure the field's vectorSearchDimensions equals the embedding length; regenerate embeddings or fix schema.";
+      "Ensure the field's vectorSearchDimensions equals the embedding length (commonly 1536 for OpenAI). Check your embedding model's output dimensions and update the index schema accordingly.";
   }
   if (/Invalid expression/i.test(msg) || /\$filter/i.test(msg)) {
     insight.code = "ERR_BAD_FILTER";
     insight.recommendation =
-      "Fix OData syntax, use parentheses, any/all for collections, and consider search.in(...) for set filters.";
+      "Fix OData syntax: use parentheses for grouping, any/all for collections, and search.in(...) for set filters. Examples: 'category eq \"books\"', 'price gt 10 and price lt 100', 'tags/any(t: t eq \"fiction\")'.";
   }
   if (/Indexer invocation is once every 180 seconds/i.test(msg)) {
     insight.code = "ERR_INDEXER_COOLDOWN";
-    insight.recommendation = "Wait ~180s between runs on Free tier or upgrade to a paid tier.";
+    insight.recommendation = "Wait ~180s between runs on Free tier or upgrade to a paid tier. Use getIndexerStatus to check last run time.";
+  }
+  
+  // Additional common error patterns
+  if (/field.+not found/i.test(msg) || /field.+does not exist/i.test(msg)) {
+    insight.code = "ERR_NOT_FOUND";
+    insight.recommendation = "Use getIndex to verify field names and types. Field names are case-sensitive. Check if the field was recently added and documents need reindexing.";
+  }
+  if (/duplicate.+key/i.test(msg) || /already exists/i.test(msg)) {
+    insight.code = "ERR_CONFLICT";
+    insight.recommendation = "Use mergeDocuments instead of uploadDocuments for existing documents, or deleteDocuments first if you want to replace them completely.";
+  }
+  if (/storage.+quota/i.test(msg) || /storage.+limit/i.test(msg)) {
+    insight.code = "ERR_STORAGE_LIMIT";
+    insight.recommendation = "Delete unused indexes/documents or upgrade your service tier. Use getIndexStats to check storage usage per index.";
+  }
+  if (/skillset/i.test(msg) && /not found/i.test(msg)) {
+    insight.code = "ERR_NOT_FOUND";
+    insight.recommendation = "Use listSkillsets to verify available skillsets. Ensure the skillset is created before associating it with an indexer.";
+  }
+  if (/data source/i.test(msg) && /not found/i.test(msg)) {
+    insight.code = "ERR_NOT_FOUND";
+    insight.recommendation = "Use listDataSources to verify available data sources. Create the data source first using createOrUpdateBlobDataSource.";
   }
 
   return { insight };

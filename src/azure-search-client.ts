@@ -37,6 +37,13 @@ export class AzureSearchClient {
       throw new Error(`Azure Search API error (${response.status}): ${errorText}`);
     }
 
+    // Handle responses with no content
+    // 204 No Content - returned by DELETE operations
+    // 202 Accepted - returned by async operations like runIndexer, resetIndexer
+    if (response.status === 204 || response.status === 202) {
+      return null;
+    }
+
     return response.json();
   }
 
@@ -76,8 +83,8 @@ export class AzureSearchClient {
   }
 
   async getDocument(indexName: string, key: string, select?: string[]) {
-    const params = select ? `&$select=${select.join(',')}` : '';
-    return this.request(`/indexes/${indexName}/docs/${key}${params}`);
+    const params = select ? `?$select=${select.join(',')}` : '';
+    return this.request(`/indexes/${indexName}/docs/${encodeURIComponent(key)}${params}`);
   }
 
   async getDocumentCount(indexName: string) {

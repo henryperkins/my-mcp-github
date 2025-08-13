@@ -50,17 +50,80 @@ export function truncateLargeArrays(obj: any, maxSize: number): any {
  * Format any data into an MCP text response. If content is too large:
  *  - Arrays: returns truncated preview and pagination hint
  *  - Objects: attempts summarization if a summarizer is provided; falls back to truncation
+ * 
+ * Format options:
+ *  - "full": Return complete data (default)
+ *  - "summary": Force summarization if possible
+ *  - "minimal": Return only essential fields
  */
 export async function formatResponse(
   data: any,
-  opts?: { maxSize?: number; summarizer?: Summarizer; summaryMaxTokens?: number; structuredContent?: any }
+  opts?: { 
+    maxSize?: number; 
+    summarizer?: Summarizer; 
+    summaryMaxTokens?: number; 
+    structuredContent?: any;
+    format?: "full" | "summary" | "minimal";
+  }
 ): Promise<MCPResponse> {
   const maxSize = opts?.maxSize ?? 20000;
   const summaryMaxTokens = opts?.summaryMaxTokens ?? 800;
+  const format = opts?.format ?? "full";
 
-  const text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  // Apply format-specific transformations
+  let formattedData = data;
+  
+  if (format === "minimal" && typeof data === "object" && data !== null) {
+    // Extract only essential fields for minimal format
+    if (Array.isArray(data)) {
+      formattedData = data.slice(0, 5).map((item: any) => {
+        if (typeof item === "object" && item !== null) {
+          // Keep only key fields
+          const minimal: any = {};
+          ['name', 'id', 'key', 'title', 'status', 'type', 'count', 'message'].forEach(field => {
+            if (field in item) minimal[field] = item[field];
+          });
+          return Object.keys(minimal).length > 0 ? minimal : item;
+        }
+        return item;
+      });
+      if (data.length > 5) {
+        formattedData = {
+          items: formattedData,
+          totalCount: data.length,
+          format: "minimal",
+          note: "Showing first 5 items with essential fields only"
+        };
+      }
+    } else if (data.value && Array.isArray(data.value)) {
+      // Handle OData responses
+      formattedData = {
+        ...data,
+        value: data.value.slice(0, 5),
+        format: "minimal",
+        note: "Minimal format - showing first 5 items"
+      };
+    }
+  } else if (format === "summary" && opts?.summarizer) {
+    // Force summarization for summary format
+    try {
+      const fullText = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+      const summary = await opts.summarizer(fullText, summaryMaxTokens);
+      formattedData = {
+        format: "summary",
+        summary,
+        originalSize: fullText.length,
+        message: "Response summarized as requested"
+      };
+    } catch {
+      // Fall back to truncation if summarization fails
+      formattedData = truncateLargeArrays(data, maxSize / 2);
+    }
+  }
+  
+  const text = typeof formattedData === "string" ? formattedData : JSON.stringify(formattedData, null, 2);
 
-  if (text.length > maxSize) {
+  if (text.length > maxSize && format !== "summary") {
     // For arrays, paginate/truncate guidance
     if (Array.isArray(data)) {
       const payload = {

@@ -6,7 +6,8 @@ import { resolveAnalyzerForLanguage } from "./utils/languageAnalyzers";
 import getToolHints from "./utils/toolHints";
 import { encodeCursor, decodeCursor } from "./utils/pagination";
 import type { ToolContext } from "./types";
-import { generateParameterElicitation } from "./tool-elicitation";
+import { ToolElicitationBuilder } from "./tool-elicitation";
+import { elicitIfNeeded, mergeElicitedParams, needsElicitation } from "./utils/elicitation-integration";
 
 /** Local validation helper to keep behavior consistent with previous implementation. */
 function validateIndexDefinition(def: any): string[] {
@@ -39,92 +40,6 @@ function validateIndexDefinition(def: any): string[] {
   return errors;
 }
 
-/**
- * Build a JSON schema for MCP elicitation requests based on a tool's elicitation steps.
- * Currently tailored for createIndex, with a generic fallback for other tools if needed.
- */
-function buildSchemaFromElicitationSteps(toolName: string, steps?: any[]) {
-  if (toolName === "createIndex") {
-    return {
-      type: "object",
-      properties: {
-        creationMode: {
-          type: "string",
-          title: "Creation Mode",
-          description: "Choose how to create the index",
-          enum: ["Use a template", "Clone existing index", "Custom definition"]
-        },
-        template: {
-          type: "string",
-          title: "Template",
-          description: "Template to use when creating the index",
-          enum: ["documentSearch", "productCatalog", "hybridSearch", "knowledgeBase"]
-        },
-        indexName: {
-          type: "string",
-          title: "Index name",
-          description: "Lowercase letters, numbers, hyphens; must start with a letter; max 128 chars",
-          pattern: "^[a-z][a-z0-9-]*$",
-          maxLength: 128
-        },
-        language: {
-          type: "string",
-          title: "Language",
-          description: "Primary language of your content",
-          enum: ["english", "spanish", "french", "german", "japanese", "chinese", "other"],
-          default: "english"
-        },
-        vectorDimensions: {
-          type: "number",
-          title: "Vector dimensions (hybrid search)",
-          description: "Common: 1536 for OpenAI/Azure OpenAI embeddings",
-          minimum: 1,
-          maximum: 4096,
-          default: 1536
-        },
-        cloneFrom: {
-          type: "string",
-          title: "Clone from index",
-          description: "Name of an existing index to clone"
-        }
-      },
-      required: ["creationMode"]
-    };
-  }
-
-  // Generic fallback: map steps to anonymous properties
-  const properties: Record<string, any> = {};
-  const required: string[] = [];
-  (steps || []).forEach((s: any, i: number) => {
-    const key = `step_${i + 1}`;
-    const prop: any = { title: s?.prompt || `Step ${i + 1}` };
-    switch (s?.type) {
-      case "choice":
-        prop.type = "string";
-        if (Array.isArray(s.options)) prop.enum = s.options;
-        break;
-      case "text":
-        prop.type = "string";
-        break;
-      case "number":
-        prop.type = "number";
-        if (typeof s.default !== "undefined") prop.default = s.default;
-        break;
-      case "boolean":
-      case "confirm":
-        prop.type = "boolean";
-        if (typeof s.default !== "undefined") prop.default = s.default;
-        break;
-      default:
-        prop.type = "string";
-    }
-    if (s?.helpText) prop.description = s.helpText;
-    properties[key] = prop;
-    if (typeof s?.default === "undefined") required.push(key);
-  });
-
-  return { type: "object", properties, required };
-}
 
 /**
  * Register Index management tools on the provided MCP server.
@@ -148,7 +63,11 @@ export function registerIndexTools(server: any, context: ToolContext) {
         const indexes = await client.listIndexes();
 
         if (verbose) {
-          return await formatResponse({ indexes, count: indexes.length }, { summarizer: getSummarizer?.() || undefined });
+          const structured = { indexes, count: indexes.length };
+          return await formatResponse(structured, {
+            summarizer: getSummarizer?.() || undefined,
+            structuredContent: structured
+          });
         }
 
         let indexInfo = indexes.map((idx: any) => ({
@@ -165,11 +84,22 @@ export function registerIndexTools(server: any, context: ToolContext) {
             indexInfo.map(async (info: any) => {
               try {
                 const stats: any = await client.getIndexStats(info.name);
-                return {
+                const result = {
                   ...info,
                   documentCount: stats.documentCount || 0,
                   storageSize: stats.storageSize || 0
                 };
+                
+                // Add vector index size if available and non-zero
+                if (stats.vectorIndexSize && stats.vectorIndexSize > 0) {
+                  result.vectorIndexSize = stats.vectorIndexSize;
+                } else if (info.vectorSearchEnabled && stats.vectorIndexSize === 0) {
+                  // Note when vector search is enabled but size is 0
+                  result.vectorIndexSize = 0;
+                  result.vectorIndexNote = "Vector search enabled but size not reported";
+                }
+                
+                return result;
               } catch {
                 return info;
               }
@@ -178,7 +108,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
         }
 
         const structuredData = { indexes: indexInfo, count: indexInfo.length };
-        return await formatResponse(structuredData, { 
+        return await formatResponse(structuredData, {
           summarizer: getSummarizer?.() || undefined,
           structuredContent: structuredData
         });
@@ -186,7 +116,8 @@ export function registerIndexTools(server: any, context: ToolContext) {
         const { insight } = normalizeError(e, { tool: "listIndexes" });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("GET")
   );
 
   server.tool(
@@ -197,7 +128,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
       try {
         const client = getClient();
         const idx = await client.getIndex(indexName);
-        return await formatResponse(idx, { 
+        return await formatResponse(idx, {
           summarizer: getSummarizer?.() || undefined,
           structuredContent: idx
         });
@@ -205,7 +136,8 @@ export function registerIndexTools(server: any, context: ToolContext) {
         const { insight } = normalizeError(e, { tool: "getIndex", indexName });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("GET")
   );
 
   server.tool(
@@ -216,7 +148,28 @@ export function registerIndexTools(server: any, context: ToolContext) {
       try {
         const client = getClient();
         const stats = await client.getIndexStats(indexName);
-        return await formatResponse(stats, { 
+        
+        // Add diagnostic information if vectorIndexSize is 0
+        if (stats && stats.vectorIndexSize === 0) {
+          // Fetch index definition to check for vector fields
+          try {
+            const indexDef = await client.getIndex(indexName);
+            const hasVectorFields = indexDef.fields?.some((f: any) => 
+              f.type === 'Collection(Edm.Single)' || 
+              f.type === 'Edm.Vector' ||
+              (f.dimensions && f.dimensions > 0)
+            );
+            
+            if (hasVectorFields) {
+              stats.note = "Vector fields detected but vectorIndexSize shows 0. This may indicate vectors are not yet indexed or the API doesn't report vector storage separately.";
+              stats.vectorFieldsPresent = true;
+            }
+          } catch {
+            // Ignore errors from fetching index definition
+          }
+        }
+        
+        return await formatResponse(stats, {
           summarizer: getSummarizer?.() || undefined,
           structuredContent: stats
         });
@@ -224,7 +177,8 @@ export function registerIndexTools(server: any, context: ToolContext) {
         const { insight } = normalizeError(e, { tool: "getIndexStats", indexName });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("GET")
   );
 
   server.tool(
@@ -234,13 +188,33 @@ export function registerIndexTools(server: any, context: ToolContext) {
     async ({ indexName }: any) => {
       try {
         const client = getClient();
+        
+        // Use MCP elicitation for confirmation if supported
+        const elicitRequest = ToolElicitationBuilder.deleteIndexElicitation(indexName);
+        const confirmed = await elicitIfNeeded(context.agent || server, elicitRequest);
+        
+        // If elicitation was triggered, check confirmation
+        if (confirmed !== undefined) {
+          if (confirmed.indexName !== indexName) {
+            throw new Error("Index name mismatch in confirmation");
+          }
+          if (confirmed.confirmation !== "DELETE") {
+            throw new Error("Deletion not confirmed");
+          }
+          if (!confirmed.understood) {
+            throw new Error("User did not acknowledge the permanent nature of this action");
+          }
+        }
+        
         await client.deleteIndex(indexName);
-        return await formatResponse({ success: true, message: `Index ${indexName} deleted` }, { summarizer: getSummarizer?.() || undefined });
+        const structured = { success: true, message: `Index ${indexName} deleted` };
+        return await formatResponse(structured, { summarizer: getSummarizer?.() || undefined, structuredContent: structured });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "deleteIndex", indexName });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("DELETE")
   );
 
   server.tool(
@@ -290,85 +264,73 @@ export function registerIndexTools(server: any, context: ToolContext) {
       try {
         const client = getClient();
 
-        // Local mutable copies of parameters for elicitation updates
-        let __template = template;
-        let __indexName = indexName;
-        let __cloneFrom = cloneFrom;
-        let __vectorDimensions = vectorDimensions;
-        let __language = language;
-        let __validate = validate;
-        let __indexDefinition = indexDefinition;
-
-        // If not enough info provided, attempt an elicitation flow when supported
-        if (!__template && !__cloneFrom && !__indexDefinition && server?.server?.elicitInput) {
-          try {
-            const elicitation = generateParameterElicitation("createIndex");
-            if (elicitation) {
-              const requestedSchema = buildSchemaFromElicitationSteps("createIndex", elicitation.steps);
-              const elicited = await server.server.elicitInput({
-                message: elicitation.description,
-                requestedSchema
-              });
-
-              // Normalize elicitation response shape
-              const answers: any = (elicited as any)?.content ?? (elicited as any)?.data ?? elicited ?? {};
-              const mode = answers.creationMode || "Use a template";
-
-              if (mode === "Use a template") {
-                __template = answers.template;
-                __indexName = answers.indexName;
-                __language = (answers.language || __language || "").toString().toLowerCase();
-                if (answers.vectorDimensions !== undefined) {
-                  __vectorDimensions = Number(answers.vectorDimensions);
-                }
-              } else if (mode === "Clone existing index") {
-                __cloneFrom = answers.cloneFrom;
-                __indexName = answers.indexName || (__cloneFrom ? `${__cloneFrom}-copy` : __indexName);
+        // Check if we need to elicit missing parameters
+        if (!template && !cloneFrom && !indexDefinition) {
+          // Get the first elicitation step (choosing approach)
+          const elicitationSteps = ToolElicitationBuilder.createIndexElicitation();
+          const elicited = await elicitIfNeeded(context.agent || server, elicitationSteps[0]);
+          
+          if (elicited?.approach) {
+            if (elicited.approach === "template") {
+              // Ask for template choice
+              const templateElicited = await elicitIfNeeded(context.agent || server, elicitationSteps[1]);
+              if (templateElicited?.template) {
+                template = templateElicited.template;
               }
-              // For "Custom definition", we still require indexDefinition; existing validation below will handle it
+            } else if (elicited.approach === "clone") {
+              cloneFrom = elicited.cloneFrom || cloneFrom;
             }
-          } catch {
-            // If elicitation fails or client doesn't support it, continue with provided parameters
+            // For "custom", we'll proceed with indexDefinition requirement
+          }
+          
+          // Get index configuration details if we have a template
+          if (template && !indexName) {
+            const configElicited = await elicitIfNeeded(context.agent || server, elicitationSteps[2]);
+            if (configElicited) {
+              indexName = configElicited.indexName || indexName;
+              language = configElicited.language || language;
+              vectorDimensions = configElicited.vectorDimensions || vectorDimensions;
+            }
           }
         }
 
         let finalDefinition: any;
 
-        if (__cloneFrom) {
-          const sourceIndex = await client.getIndex(__cloneFrom);
+        if (cloneFrom) {
+          const sourceIndex = await client.getIndex(cloneFrom);
           finalDefinition = { ...(sourceIndex as any) };
-          finalDefinition.name = __indexName || `${__cloneFrom}-copy`;
+          finalDefinition.name = indexName || `${cloneFrom}-copy`;
           delete finalDefinition["@odata.etag"];
           delete finalDefinition["@odata.context"];
-        } else if (__template && __template !== "custom") {
-          if (!__indexName) {
+        } else if (template && template !== "custom") {
+          if (!indexName) {
             throw new Error("indexName is required when using a template");
           }
 
           let builder: IndexBuilder;
-          switch (__template) {
+          switch (template) {
             case "documentSearch":
-              builder = IndexTemplates.documentSearch(__indexName);
+              builder = IndexTemplates.documentSearch(indexName);
               break;
             case "productCatalog":
-              builder = IndexTemplates.productCatalog(__indexName);
+              builder = IndexTemplates.productCatalog(indexName);
               break;
             case "hybridSearch":
-              builder = IndexTemplates.hybridSearch(__indexName, __vectorDimensions || 1536);
+              builder = IndexTemplates.hybridSearch(indexName, vectorDimensions || 1536);
               break;
             case "knowledgeBase":
-              builder = IndexTemplates.knowledgeBase(__indexName);
+              builder = IndexTemplates.knowledgeBase(indexName);
               break;
             default:
-              throw new Error(`Unknown template: ${__template}`);
+              throw new Error(`Unknown template: ${template}`);
           }
 
           // Apply language analyzer if specified
-          if (__language) {
+          if (language) {
             // Apply to all text fields via builder helper
-            builder.applyLanguageToAllText(__language);
+            builder.applyLanguageToAllText(language);
             // Fallback legacy behavior if needed:
-            const analyzer = resolveAnalyzerForLanguage(__language);
+            const analyzer = resolveAnalyzerForLanguage(language);
             if (analyzer && (builder as any).definition?.fields) {
               (builder as any).definition.fields.forEach((f: any) => {
                 if (f.searchable && f.type === "Edm.String") {
@@ -380,13 +342,13 @@ export function registerIndexTools(server: any, context: ToolContext) {
 
           finalDefinition = builder.build();
         } else {
-          if (!__indexDefinition) {
+          if (!indexDefinition) {
             throw new Error("indexDefinition is required when not using a template");
           }
-          finalDefinition = __indexDefinition;
+          finalDefinition = indexDefinition;
         }
 
-        if (__validate) {
+        if (validate) {
           const errors = validateIndexDefinition(finalDefinition);
           if (errors.length > 0) {
             throw new Error(`Validation failed:\n${errors.join("\n")}`);
@@ -399,7 +361,8 @@ export function registerIndexTools(server: any, context: ToolContext) {
         const { insight } = normalizeError(e, { tool: "createIndex" });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("POST")
   );
 
   server.tool(
@@ -557,7 +520,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
           indexes: slice,
           ...(nextCursor && { nextCursor }),
         };
-        return await formatResponse(structuredData, { 
+        return await formatResponse(structuredData, {
           structuredContent: structuredData
         });
       } catch (e) {

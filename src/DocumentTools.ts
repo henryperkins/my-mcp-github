@@ -2,8 +2,9 @@
 import { z } from "zod";
 import { formatResponse, formatToolError, normalizeError } from "./utils/response";
 import getToolHints from "./utils/toolHints";
-
-type GetClient = () => any;
+import { ToolElicitationBuilder } from "./tool-elicitation";
+import { elicitIfNeeded } from "./utils/elicitation-integration";
+import type { ToolContext } from "./types";
 
 /**
  * Register document search and CRUD tools.
@@ -11,7 +12,8 @@ type GetClient = () => any;
  *  - searchDocuments, getDocument, countDocuments
  *  - uploadDocuments, mergeDocuments, mergeOrUploadDocuments, deleteDocuments
  */
-export function registerDocumentTools(server: any, getClient: GetClient) {
+export function registerDocumentTools(server: any, context: ToolContext) {
+  const { getClient, getSummarizer } = context;
   // ---------------- DOCUMENTS ----------------
   const SearchResultsSchema = z.object({
     value: z.array(z.any()),
@@ -41,17 +43,32 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
     async ({ indexName, search, top, skip, select, filter, orderBy, includeTotalCount }: any) => {
       try {
         const client = getClient();
+        
+        // Elicit search parameters if index not provided
+        if (!indexName) {
+          const elicited = await elicitIfNeeded(context.agent || server, ToolElicitationBuilder.searchDocumentsElicitation());
+          if (elicited) {
+            indexName = elicited.indexName || indexName;
+            search = elicited.searchQuery || search || "*";
+            top = elicited.top || top;
+            includeTotalCount = elicited.includeTotalCount ?? includeTotalCount;
+          }
+        }
         const searchParams = {
           search,
           top,
           skip,
           ...(select && { select: select.join(",") }),
           ...(filter && { filter }),
-          ...(orderBy && { orderBy }),
+          // Azure Search expects 'orderby' (no $) in POST body
+          ...(orderBy && { orderby: orderBy }),
           ...(includeTotalCount && { count: true })
         };
         const result = await client.searchDocuments(indexName, searchParams);
-        return await formatResponse(result, { structuredContent: result });
+        return await formatResponse(result, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: result
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "searchDocuments", indexName });
         return formatToolError(insight);
@@ -68,12 +85,16 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const doc = await client.getDocument(indexName, key, select);
-        return await formatResponse(doc, { structuredContent: doc });
+        return await formatResponse(doc, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: doc
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getDocument", indexName, key });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("GET")
   );
 
   server.tool(
@@ -85,7 +106,10 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
         const client = getClient();
         const count = await client.getDocumentCount(indexName);
         const structuredData = { count };
-        return await formatResponse(structuredData, { structuredContent: structuredData });
+        return await formatResponse(structuredData, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: structuredData
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "countDocuments", indexName });
         return formatToolError(insight);
@@ -105,13 +129,27 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
     async ({ indexName, documents }: any) => {
       try {
         const client = getClient();
+        
+        // Elicit upload parameters if missing
+        if (!indexName || !documents || documents.length === 0) {
+          const elicited = await elicitIfNeeded(context.agent || server, ToolElicitationBuilder.uploadDocumentsElicitation());
+          if (elicited) {
+            indexName = elicited.indexName || indexName;
+            // Note: documents would need to be provided separately
+            // This elicitation just helps with configuration
+          }
+        }
         const result = await client.uploadDocuments(indexName, documents);
-        return await formatResponse(result, { structuredContent: result });
+        return await formatResponse(result, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: result
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "uploadDocuments", indexName });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("POST")
   );
 
   server.tool(
@@ -125,12 +163,16 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const result = await client.mergeDocuments(indexName, documents);
-        return await formatResponse(result, { structuredContent: result });
+        return await formatResponse(result, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: result
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "mergeDocuments", indexName });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("POST")
   );
 
   server.tool(
@@ -144,12 +186,16 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const result = await client.mergeOrUploadDocuments(indexName, documents);
-        return await formatResponse(result, { structuredContent: result });
+        return await formatResponse(result, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: result
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "mergeOrUploadDocuments", indexName });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("POST")
   );
 
   server.tool(
@@ -163,11 +209,15 @@ export function registerDocumentTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const result = await client.deleteDocuments(indexName, keys);
-        return await formatResponse(result, { structuredContent: result });
+        return await formatResponse(result, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: result
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "deleteDocuments", indexName });
         return formatToolError(insight);
       }
-    }
+    },
+    getToolHints("DELETE")
   );
 }

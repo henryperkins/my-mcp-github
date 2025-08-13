@@ -1,351 +1,385 @@
-// Tool elicitation helpers for better user interaction
-// Based on MCP specification for client elicitation
+// MCP Elicitation Protocol implementation for Azure Search tools
+// Based on MCP Protocol Revision 2025-06-18
 
-export interface ElicitationHint {
-  type: 'choice' | 'text' | 'number' | 'boolean' | 'confirm';
-  prompt: string;
-  options?: string[];
-  default?: any;
-  validation?: (value: any) => boolean | string;
-  helpText?: string;
-  examples?: string[];
+/**
+ * MCP Primitive Schema Types for elicitation
+ */
+export type PrimitiveSchemaDefinition = 
+  | StringSchema 
+  | NumberSchema 
+  | BooleanSchema 
+  | EnumSchema;
+
+export interface StringSchema {
+  type: "string";
+  title?: string;
+  description?: string;
+  format?: "uri" | "email" | "date" | "date-time";
+  minLength?: number;
+  maxLength?: number;
 }
 
-export interface ToolElicitation {
-  description: string;
-  requiredCapabilities?: string[];
-  elicitationSteps?: ElicitationHint[];
-  confirmationRequired?: boolean;
-  confirmationPrompt?: string;
+export interface NumberSchema {
+  type: "number" | "integer";
+  title?: string;
+  description?: string;
+  minimum?: number;
+  maximum?: number;
 }
 
-// Elicitation configurations for complex tools
-export const toolElicitations: Record<string, ToolElicitation> = {
-  createIndex: {
-    description: "I'll help you create a new search index. Let me guide you through the options.",
-    elicitationSteps: [
-      {
-        type: 'choice',
-        prompt: 'How would you like to create your index?',
-        options: ['Use a template', 'Clone existing index', 'Custom definition'],
-        helpText: 'Templates provide pre-configured index structures for common scenarios'
-      },
-      {
-        type: 'choice',
-        prompt: 'Which template would you like to use?',
-        options: ['documentSearch', 'productCatalog', 'hybridSearch', 'knowledgeBase'],
-        helpText: `
-• documentSearch: For articles, blogs, documentation
-• productCatalog: For e-commerce products with prices and categories
-• hybridSearch: Combines text and vector search for semantic similarity
-• knowledgeBase: For FAQ systems and support documentation`
-      },
-      {
-        type: 'text',
-        prompt: 'What name should the index have?',
-        validation: (value: string) => {
-          if (!value) return 'Index name is required';
-          if (!/^[a-z][a-z0-9-]*$/.test(value)) {
-            return 'Index name must start with lowercase letter and contain only lowercase letters, numbers, and hyphens';
-          }
-          if (value.length > 128) return 'Index name must be 128 characters or less';
-          return true;
-        },
-        examples: ['product-catalog', 'knowledge-base-v2', 'customer-documents']
-      },
-      {
-        type: 'choice',
-        prompt: 'What language will your content primarily be in?',
-        options: ['English', 'Spanish', 'French', 'German', 'Japanese', 'Chinese', 'Other'],
-        default: 'English',
-        helpText: 'This configures the text analyzer for better search results in your language'
-      },
-      {
-        type: 'number',
-        prompt: 'For hybrid search: What vector dimensions will you use?',
-        default: 1536,
-        helpText: 'Common dimensions: OpenAI (1536), Azure OpenAI ada-002 (1536), OpenAI 3-large (3072)',
-        validation: (value: number) => {
-          if (value < 1 || value > 4096) return 'Dimensions must be between 1 and 4096';
-          return true;
-        }
-      }
-    ]
-  },
-
-  createOrUpdateIndex: {
-    description: "I'll help you update an existing index. You can add fields or modify configurations.",
-    elicitationSteps: [
-      {
-        type: 'text',
-        prompt: 'Which index do you want to update?',
-        validation: (value: string) => value ? true : 'Index name is required'
-      },
-      {
-        type: 'choice',
-        prompt: 'What would you like to do?',
-        options: ['Add new fields', 'Update semantic search', 'Both', 'Full replacement'],
-        helpText: 'Note: You cannot remove existing fields or change their types'
-      },
-      {
-        type: 'confirm',
-        prompt: 'Do you want to validate changes before applying?',
-        default: true,
-        helpText: 'Validation checks for breaking changes and schema errors'
-      }
-    ]
-  },
-
-  deleteIndex: {
-    description: "⚠️ This will permanently delete the index and all its documents.",
-    confirmationRequired: true,
-    confirmationPrompt: "Are you sure you want to delete index '{indexName}'? This action cannot be undone and will delete all documents.",
-    elicitationSteps: [
-      {
-        type: 'text',
-        prompt: 'Enter the exact name of the index to delete:',
-        validation: (value: string) => value ? true : 'Index name is required'
-      },
-      {
-        type: 'text',
-        prompt: 'Type "DELETE" to confirm:',
-        validation: (value: string) => value === 'DELETE' ? true : 'Please type DELETE to confirm'
-      }
-    ]
-  },
-
-  uploadDocuments: {
-    description: "I'll help you upload documents to your search index.",
-    elicitationSteps: [
-      {
-        type: 'text',
-        prompt: 'Which index should the documents be uploaded to?',
-        validation: (value: string) => value ? true : 'Index name is required'
-      },
-      {
-        type: 'choice',
-        prompt: 'How would you like to provide the documents?',
-        options: ['JSON array', 'CSV file path', 'Individual document'],
-        helpText: 'Documents must match the index schema'
-      },
-      {
-        type: 'number',
-        prompt: 'How many documents are you uploading?',
-        validation: (value: number) => {
-          if (value < 1) return 'Must upload at least 1 document';
-          if (value > 1000) return 'Maximum 1000 documents per batch. Consider using multiple batches.';
-          return true;
-        }
-      },
-      {
-        type: 'confirm',
-        prompt: 'Validate documents against index schema before upload?',
-        default: true
-      }
-    ]
-  },
-
-  searchDocuments: {
-    description: "I'll help you search for documents. Let me guide you through the search options.",
-    elicitationSteps: [
-      {
-        type: 'text',
-        prompt: 'Which index do you want to search?',
-        validation: (value: string) => value ? true : 'Index name is required'
-      },
-      {
-        type: 'text',
-        prompt: 'Enter your search query (or * for all documents):',
-        default: '*',
-        examples: ['microsoft', 'product AND "in stock"', 'category:electronics']
-      },
-      {
-        type: 'number',
-        prompt: 'How many results would you like?',
-        default: 10,
-        validation: (value: number) => {
-          if (value < 1 || value > 50) return 'Must be between 1 and 50';
-          return true;
-        }
-      },
-      {
-        type: 'choice',
-        prompt: 'Would you like to add filters?',
-        options: ['No filters', 'Filter by field', 'Date range', 'Numeric range', 'Custom OData filter'],
-        helpText: 'Filters narrow down results based on field values'
-      },
-      {
-        type: 'choice',
-        prompt: 'Sort results by:',
-        options: ['Relevance (default)', 'Date (newest)', 'Date (oldest)', 'Custom field'],
-        default: 'Relevance (default)'
-      },
-      {
-        type: 'boolean',
-        prompt: 'Include total count of matching documents?',
-        default: true,
-        helpText: 'Shows the total number of matches (not just returned results)'
-      }
-    ]
-  },
-
-  createOrUpdateSynonymMap: {
-    description: "I'll help you create or update a synonym map for better search relevance.",
-    elicitationSteps: [
-      {
-        type: 'text',
-        prompt: 'What name should the synonym map have?',
-        validation: (value: string) => {
-          if (!value) return 'Synonym map name is required';
-          if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(value)) {
-            return 'Name must start with a letter and contain only letters, numbers, and underscores';
-          }
-          return true;
-        }
-      },
-      {
-        type: 'choice',
-        prompt: 'How would you like to define synonyms?',
-        options: ['Common synonyms', 'Industry-specific', 'Custom rules'],
-        helpText: `
-• Common: General synonyms (e.g., big => large, small => tiny)
-• Industry: Domain-specific terms (e.g., IT, medical, legal)
-• Custom: Define your own synonym rules`
-      },
-      {
-        type: 'text',
-        prompt: 'Enter synonym rules (one per line):',
-        helpText: `Format examples:
-• Equivalent: USA, United States, America
-• One-way: cat => feline
-• Explicit: ms, Microsoft => Microsoft`,
-        examples: [
-          'phone, telephone, mobile',
-          'laptop => computer',
-          'TV, television => television'
-        ]
-      }
-    ]
-  }
-};
-
-// Helper function to format elicitation prompts for better UX
-export function formatElicitationPrompt(hint: ElicitationHint): string {
-  let prompt = hint.prompt;
-  
-  if (hint.helpText) {
-    prompt += `\n💡 ${hint.helpText}`;
-  }
-  
-  if (hint.options) {
-    prompt += '\n\nOptions:';
-    hint.options.forEach((opt, i) => {
-      prompt += `\n  ${i + 1}. ${opt}`;
-    });
-  }
-  
-  if (hint.examples && hint.examples.length > 0) {
-    prompt += '\n\nExamples:';
-    hint.examples.forEach(ex => {
-      prompt += `\n  • ${ex}`;
-    });
-  }
-  
-  if (hint.default !== undefined) {
-    prompt += `\n\nDefault: ${hint.default}`;
-  }
-  
-  return prompt;
+export interface BooleanSchema {
+  type: "boolean";
+  title?: string;
+  description?: string;
+  default?: boolean;
 }
 
-// Helper to generate interactive parameter collection
-export function generateParameterElicitation(toolName: string): any {
-  const elicitation = toolElicitations[toolName];
-  if (!elicitation) return null;
-  
-  return {
-    description: elicitation.description,
-    steps: elicitation.elicitationSteps?.map(step => ({
-      ...step,
-      formattedPrompt: formatElicitationPrompt(step)
-    })),
-    requiresConfirmation: elicitation.confirmationRequired,
-    confirmationPrompt: elicitation.confirmationPrompt
+export interface EnumSchema {
+  type: "string";
+  title?: string;
+  description?: string;
+  enum: string[];
+  enumNames?: string[];
+}
+
+/**
+ * MCP Elicitation Request Parameters
+ */
+export interface ElicitationRequest {
+  message: string;
+  requestedSchema: {
+    type: "object";
+    properties: Record<string, PrimitiveSchemaDefinition>;
+    required?: string[];
   };
 }
 
-// Validation helper for user inputs
-export function validateUserInput(
-  value: any, 
-  hint: ElicitationHint
-): { valid: boolean; error?: string } {
-  if (hint.validation) {
-    const result = hint.validation(value);
-    if (result === true) {
-      return { valid: true };
-    }
-    return { valid: false, error: result as string };
-  }
-  
-  // Basic type validation
-  switch (hint.type) {
-    case 'number':
-      if (isNaN(value)) {
-        return { valid: false, error: 'Must be a valid number' };
-      }
-      break;
-    case 'boolean':
-      if (typeof value !== 'boolean') {
-        return { valid: false, error: 'Must be true or false' };
-      }
-      break;
-    case 'choice':
-      if (hint.options && !hint.options.includes(value)) {
-        return { valid: false, error: `Must be one of: ${hint.options.join(', ')}` };
-      }
-      break;
-  }
-  
-  return { valid: true };
+/**
+ * MCP Elicitation Result
+ */
+export interface ElicitationResult {
+  action: "accept" | "decline" | "cancel";
+  content?: Record<string, string | number | boolean>;
 }
 
-// Template-based parameter generation
-export function generateTemplateParameters(template: string, answers: Record<string, any>): any {
-  switch (template) {
-    case 'documentSearch':
-      return {
-        template: 'documentSearch',
-        indexName: answers.indexName,
-        language: answers.language?.toLowerCase(),
-        validate: true
-      };
-    
-    case 'productCatalog':
-      return {
-        template: 'productCatalog',
-        indexName: answers.indexName,
-        language: answers.language?.toLowerCase(),
-        validate: true
-      };
-    
-    case 'hybridSearch':
-      return {
-        template: 'hybridSearch',
-        indexName: answers.indexName,
-        vectorDimensions: answers.vectorDimensions || 1536,
-        language: answers.language?.toLowerCase(),
-        validate: true
-      };
-    
-    case 'knowledgeBase':
-      return {
-        template: 'knowledgeBase',
-        indexName: answers.indexName,
-        language: answers.language?.toLowerCase(),
-        validate: true
-      };
-    
-    default:
-      return answers;
+/**
+ * Helper to create MCP-compliant elicitation requests for Azure Search tools
+ */
+export class ToolElicitationBuilder {
+  static createIndexElicitation(): ElicitationRequest[] {
+    return [
+      {
+        message: "Let's create a new search index. First, how would you like to proceed?",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            approach: {
+              type: "string",
+              title: "Creation Approach",
+              description: "Choose how to create your index",
+              enum: ["template", "clone", "custom"],
+              enumNames: ["Use a template", "Clone existing index", "Custom definition"]
+            }
+          },
+          required: ["approach"]
+        }
+      },
+      {
+        message: "Which template would you like to use for your search index?",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            template: {
+              type: "string",
+              title: "Template Type",
+              description: "Pre-configured index structure for common scenarios",
+              enum: ["documentSearch", "productCatalog", "hybridSearch", "knowledgeBase"],
+              enumNames: [
+                "Document Search (articles, blogs)",
+                "Product Catalog (e-commerce)",
+                "Hybrid Search (text + vector)",
+                "Knowledge Base (FAQ, support docs)"
+              ]
+            }
+          },
+          required: ["template"]
+        }
+      },
+      {
+        message: "Please provide the index configuration details",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            indexName: {
+              type: "string",
+              title: "Index Name",
+              description: "Lowercase letters, numbers, and hyphens only (max 128 chars)",
+              minLength: 1,
+              maxLength: 128
+            },
+            language: {
+              type: "string",
+              title: "Primary Language",
+              description: "Language for text analysis",
+              enum: ["english", "spanish", "french", "german", "japanese", "chinese"],
+              enumNames: ["English", "Spanish", "French", "German", "Japanese", "Chinese"]
+            },
+            vectorDimensions: {
+              type: "integer",
+              title: "Vector Dimensions",
+              description: "For hybrid search: OpenAI (1536), Azure OpenAI ada-002 (1536)",
+              minimum: 1,
+              maximum: 4096
+            }
+          },
+          required: ["indexName", "language"]
+        }
+      }
+    ];
   }
+
+  static deleteIndexElicitation(indexName?: string): ElicitationRequest {
+    return {
+      message: `⚠️ WARNING: You are about to permanently delete the index${indexName ? ` '${indexName}'` : ''}. This will delete all documents and cannot be undone. Please confirm.`,
+      requestedSchema: {
+        type: "object",
+        properties: {
+          indexName: {
+            type: "string",
+            title: "Index Name",
+            description: "Enter the exact name of the index to delete"
+          },
+          confirmation: {
+            type: "string",
+            title: "Confirmation",
+            description: "Type 'DELETE' to confirm deletion",
+            enum: ["DELETE"]
+          },
+          understood: {
+            type: "boolean",
+            title: "Acknowledgment",
+            description: "I understand this action is permanent and cannot be undone",
+            default: false
+          }
+        },
+        required: ["indexName", "confirmation", "understood"]
+      }
+    };
+  }
+
+  static searchDocumentsElicitation(): ElicitationRequest {
+    return {
+      message: "Configure your document search parameters",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          indexName: {
+            type: "string",
+            title: "Index Name",
+            description: "The index to search"
+          },
+          searchQuery: {
+            type: "string",
+            title: "Search Query",
+            description: "Search terms or * for all documents"
+          },
+          top: {
+            type: "integer",
+            title: "Results Count",
+            description: "Number of results to return (1-50)",
+            minimum: 1,
+            maximum: 50
+          },
+          includeTotalCount: {
+            type: "boolean",
+            title: "Include Total Count",
+            description: "Show total number of matching documents",
+            default: true
+          }
+        },
+        required: ["indexName", "searchQuery"]
+      }
+    };
+  }
+
+  static uploadDocumentsElicitation(): ElicitationRequest {
+    return {
+      message: "Prepare to upload documents to your search index",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          indexName: {
+            type: "string",
+            title: "Index Name",
+            description: "Target index for document upload"
+          },
+          documentCount: {
+            type: "integer",
+            title: "Number of Documents",
+            description: "How many documents to upload (max 1000 per batch)",
+            minimum: 1,
+            maximum: 1000
+          },
+          validateSchema: {
+            type: "boolean",
+            title: "Validate Schema",
+            description: "Validate documents against index schema before upload",
+            default: true
+          }
+        },
+        required: ["indexName", "documentCount"]
+      }
+    };
+  }
+
+  static synonymMapElicitation(): ElicitationRequest {
+    return {
+      message: "Create a synonym map to improve search relevance",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            title: "Synonym Map Name",
+            description: "Letters, numbers, and underscores only"
+          },
+          format: {
+            type: "string",
+            title: "Format",
+            description: "Synonym format (Solr is standard)",
+            enum: ["solr"],
+            enumNames: ["Apache Solr Format"]
+          }
+        },
+        required: ["name"]
+      }
+    };
+  }
+}
+
+/**
+ * Process elicitation response and extract validated content
+ */
+export function processElicitationResponse(
+  result: ElicitationResult,
+  schema: ElicitationRequest["requestedSchema"]
+): { valid: boolean; data?: any; error?: string } {
+  if (result.action === "decline") {
+    return { valid: false, error: "User declined the request" };
+  }
+  
+  if (result.action === "cancel") {
+    return { valid: false, error: "User cancelled the request" };
+  }
+  
+  if (result.action === "accept") {
+    if (!result.content) {
+      return { valid: false, error: "No content provided" };
+    }
+    
+    // Validate required fields
+    if (schema.required) {
+      for (const field of schema.required) {
+        if (!(field in result.content)) {
+          return { valid: false, error: `Missing required field: ${field}` };
+        }
+      }
+    }
+    
+    // Basic type validation
+    for (const [key, value] of Object.entries(result.content)) {
+      const propSchema = schema.properties[key];
+      if (!propSchema) continue;
+      
+      if (propSchema.type === "string" && typeof value !== "string") {
+        return { valid: false, error: `Field ${key} must be a string` };
+      }
+      
+      if ((propSchema.type === "number" || propSchema.type === "integer") && typeof value !== "number") {
+        return { valid: false, error: `Field ${key} must be a number` };
+      }
+      
+      if (propSchema.type === "boolean" && typeof value !== "boolean") {
+        return { valid: false, error: `Field ${key} must be a boolean` };
+      }
+      
+      // Validate enum values
+      if ("enum" in propSchema && propSchema.enum) {
+        if (!propSchema.enum.includes(value as string)) {
+          return { valid: false, error: `Field ${key} must be one of: ${propSchema.enum.join(", ")}` };
+        }
+      }
+      
+      // Validate string constraints
+      if (propSchema.type === "string") {
+        const strValue = value as string;
+        const strSchema = propSchema as StringSchema;
+        
+        if (strSchema.minLength && strValue.length < strSchema.minLength) {
+          return { valid: false, error: `Field ${key} must be at least ${strSchema.minLength} characters` };
+        }
+        
+        if (strSchema.maxLength && strValue.length > strSchema.maxLength) {
+          return { valid: false, error: `Field ${key} must be at most ${strSchema.maxLength} characters` };
+        }
+        
+        // Validate format
+        if (strSchema.format === "email" && !strValue.includes("@")) {
+          return { valid: false, error: `Field ${key} must be a valid email address` };
+        }
+        
+        if (strSchema.format === "uri" && !strValue.match(/^https?:\/\//)) {
+          return { valid: false, error: `Field ${key} must be a valid URI` };
+        }
+      }
+      
+      // Validate number constraints
+      if (propSchema.type === "number" || propSchema.type === "integer") {
+        const numValue = value as number;
+        const numSchema = propSchema as NumberSchema;
+        
+        if (numSchema.type === "integer" && !Number.isInteger(numValue)) {
+          return { valid: false, error: `Field ${key} must be an integer` };
+        }
+        
+        if (numSchema.minimum !== undefined && numValue < numSchema.minimum) {
+          return { valid: false, error: `Field ${key} must be at least ${numSchema.minimum}` };
+        }
+        
+        if (numSchema.maximum !== undefined && numValue > numSchema.maximum) {
+          return { valid: false, error: `Field ${key} must be at most ${numSchema.maximum}` };
+        }
+      }
+    }
+    
+    return { valid: true, data: result.content };
+  }
+  
+  return { valid: false, error: "Unknown action" };
+}
+
+/**
+ * Example of creating an elicitation request for MCP protocol
+ */
+export function createElicitationRequest(
+  id: string | number,
+  elicitation: ElicitationRequest
+): any {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "elicitation/create",
+    params: elicitation
+  };
+}
+
+/**
+ * Example of processing an elicitation response from MCP protocol
+ */
+export function parseElicitationResponse(response: any): ElicitationResult {
+  if (response.error) {
+    throw new Error(`Elicitation error: ${response.error.message}`);
+  }
+  
+  return response.result as ElicitationResult;
 }

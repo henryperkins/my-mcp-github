@@ -11,6 +11,7 @@ export function getToolHints(method: Http) {
       method === "GET" ||
       method === "PUT" ||
       method === "DELETE",
+    openWorldHint: true, // Default per MCP spec
   } as const;
 }
 

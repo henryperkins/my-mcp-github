@@ -1,8 +1,7 @@
 // src/SynonymTools.ts
 import { z } from "zod";
 import { formatResponse, formatToolError, normalizeError } from "./utils/response";
-
-type GetClient = () => any;
+import type { ToolContext } from "./types";
 
 /**
  * Register synonym map management tools.
@@ -12,7 +11,8 @@ type GetClient = () => any;
  *  - createOrUpdateSynonymMap
  *  - deleteSynonymMap
  */
-export function registerSynonymTools(server: any, getClient: GetClient) {
+export function registerSynonymTools(server: any, context: ToolContext) {
+  const { getClient, getSummarizer } = context;
   // ---------------- SYNONYM MAPS ----------------
   server.tool(
     "listSynonymMaps",
@@ -23,7 +23,11 @@ export function registerSynonymTools(server: any, getClient: GetClient) {
         const client = getClient();
         const synonymMaps = await client.listSynonymMaps();
         const names = synonymMaps.map((sm: any) => sm.name);
-        return await formatResponse({ synonymMaps: names, count: names.length });
+        const structuredData = { synonymMaps: names, count: names.length };
+        return await formatResponse(structuredData, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: structuredData
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listSynonymMaps" });
         return formatToolError(insight);
@@ -39,7 +43,29 @@ export function registerSynonymTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const sm = await client.getSynonymMap(name);
-        return await formatResponse(sm);
+        
+        // Format synonym rules for better readability
+        if (sm && sm.synonyms && typeof sm.synonyms === 'string') {
+          // Create a formatted version with parsed synonym rules
+          const formattedSm = {
+            ...sm,
+            synonymsFormatted: sm.synonyms.split('\n').filter((line: string) => line.trim()),
+            synonymsRaw: sm.synonyms // Keep original for reference
+          };
+          
+          // Replace the original synonyms with the formatted version
+          formattedSm.synonyms = formattedSm.synonymsFormatted;
+          
+          return await formatResponse(formattedSm, {
+            summarizer: getSummarizer?.() || undefined,
+            structuredContent: formattedSm
+          });
+        }
+        
+        return await formatResponse(sm, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: sm
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getSynonymMap", name });
         return formatToolError(insight);
@@ -64,7 +90,10 @@ export function registerSynonymTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const result = await client.createOrUpdateSynonymMap(name, synonymMapDefinition);
-        return await formatResponse(result);
+        return await formatResponse(result, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: result
+        });
       } catch (e) {
         const { insight } = normalizeError(e, {
           tool: "createOrUpdateSynonymMap",
@@ -84,7 +113,11 @@ export function registerSynonymTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         await client.deleteSynonymMap(name);
-        return await formatResponse({ success: true, message: `Synonym map ${name} deleted` });
+        const structuredData = { success: true, message: `Synonym map ${name} deleted` };
+        return await formatResponse(structuredData, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: structuredData
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "deleteSynonymMap", name });
         return formatToolError(insight);

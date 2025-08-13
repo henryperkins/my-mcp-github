@@ -2,8 +2,7 @@
 import { z } from "zod";
 import { formatResponse, formatToolError, normalizeError } from "./utils/response";
 import getToolHints from "./utils/toolHints";
-
-type GetClient = () => any;
+import type { ToolContext } from "./types";
 
 // Elicitation schema for Blob indexer creation/update
 function buildSchemaForBlobIndexer() {
@@ -60,7 +59,8 @@ function buildSchemaForBlobIndexer() {
  *  - getIndexerStatus
  *  - createOrUpdateBlobIndexer
  */
-export function registerIndexerTools(server: any, getClient: GetClient) {
+export function registerIndexerTools(server: any, context: ToolContext) {
+  const { getClient, getSummarizer } = context;
   // ---------------- INDEXERS ----------------
   server.tool(
     "listIndexers",
@@ -71,7 +71,11 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
         const client = getClient();
         const indexers = await client.listIndexers();
         const names = indexers.map((ix: any) => ix.name);
-        return await formatResponse({ indexers: names, count: names.length });
+        const structuredData = { indexers: names, count: names.length };
+        return await formatResponse(structuredData, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: structuredData
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listIndexers" });
         return formatToolError(insight);
@@ -87,7 +91,10 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const ix = await client.getIndexer(name);
-        return await formatResponse(ix);
+        return await formatResponse(ix, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: ix
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getIndexer", name });
         return formatToolError(insight);
@@ -156,7 +163,10 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
           }
         }
 
-        return await formatResponse(status);
+        return await formatResponse(status, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: status
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getIndexerStatus", name, historyLimit });
         return formatToolError(insight);
@@ -342,10 +352,8 @@ export function registerIndexerTools(server: any, getClient: GetClient) {
     async ({ indexerName, clientRequestId, pollSeconds, maxAttempts }: any) => {
       try {
         const c = getClient();
-        const headers = clientRequestId
-          ? { "x-ms-client-request-id": clientRequestId }
-          : {};
-        await c.runIndexer(indexerName, { headers });
+        // Note: clientRequestId could be used for tracking but isn't supported in simplified client
+        await c.runIndexer(indexerName);
         // await server.notification("progress", {
         //   operation: `indexer:${indexerName}`,
         //   progress: 0.1,

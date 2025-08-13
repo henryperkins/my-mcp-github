@@ -8,4 +8,5 @@ export type GetSummarizer = () => Summarizer | null;
 export interface ToolContext {
   getClient: GetClient;
   getSummarizer?: GetSummarizer;
+  agent?: any; // Reference to the McpAgent instance for elicitation support
 }

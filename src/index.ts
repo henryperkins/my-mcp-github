@@ -28,11 +28,12 @@ class AzureSearchMCP extends McpAgent {
     name: "azure-ai-search-mcp",
     version: "1.3.0",
     capabilities: {
-      prompts: {},
-      elicitation: {},
+      // MCP-compliant capability flags
+      prompts: { listChanged: true },
       resources: { subscribe: true, listChanged: true },
       logging: { levels: ["debug","info","warning","error"] },
-      tools: { listChanged: true }
+      tools: { listChanged: true },
+      elicitation: {}
     }
   });
 
@@ -75,25 +76,25 @@ class AzureSearchMCP extends McpAgent {
       throw error;
     }
 
-    // Create tool context with client and optional summarizer
+    // Create tool context with client, optional summarizer, and agent for elicitation
     const toolContext: ToolContext = {
       getClient: () => this.getClient(),
       getSummarizer: () => {
         const openAI = this.getOpenAIClient();
         return openAI ? (text, maxTokens) => openAI.summarize(text, maxTokens) : null;
-      }
+      },
+      agent: this // Pass the agent instance for elicitation support
     };
 
     registerIndexTools(this.server, toolContext);
-    registerDocumentTools(this.server, () => this.getClient());
-    registerDataTools(this.server, () => this.getClient());
-    registerIndexerTools(this.server, () => this.getClient());
-    registerSkillTools(this.server, () => this.getClient());
-    registerSynonymTools(this.server, () => this.getClient());
+    registerDocumentTools(this.server, toolContext);
+    registerDataTools(this.server, toolContext);
+    registerIndexerTools(this.server, toolContext);
+    registerSkillTools(this.server, toolContext);
+    registerSynonymTools(this.server, toolContext);
 
     // Resources
     registerResources(this.server, () => this.getClient());
-    // this.server.notification("notifications/resources/list_changed", { reason: "startup" });
 
     // ---------------- PROMPTS ----------------
     // Prompts provide guided workflows for complex operations

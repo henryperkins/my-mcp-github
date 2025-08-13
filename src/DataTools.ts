@@ -1,73 +1,84 @@
 // src/DataTools.ts
 import { z } from "zod";
 import { formatResponse, formatToolError, normalizeError } from "./utils/response";
+import { ElicitationRequest } from "./tool-elicitation";
+import { elicitIfNeeded, mergeElicitedParams, needsElicitation } from "./utils/elicitation-integration";
+import type { ToolContext } from "./types";
 
-type GetClient = () => any;
-
-// Elicitation schema builders for interactive parameter collection
-function buildSchemaForBlobDataSource() {
+// MCP-compliant elicitation builders
+function createBlobDataSourceElicitation(): ElicitationRequest {
   return {
-    type: "object",
-    properties: {
-      name: {
-        type: "string",
-        title: "Data source name",
-        description: "Unique within the Search service"
-      },
-      storageAccount: {
-        type: "string",
-        title: "Storage account name"
-      },
-      containerName: {
-        type: "string",
-        title: "Blob container name"
-      },
-      description: {
-        type: "string",
-        title: "Description",
-        default: ""
-      },
-      auth: {
-        type: "object",
-        title: "Authentication",
-        properties: {
-          connectionString: {
-            type: "string",
-            title: "Connection string",
-            description: "Optional. If omitted, provide an account key instead."
-          },
-          accountKey: {
-            type: "string",
-            title: "Account key",
-            description: "Optional. Used to construct a connection string if connection string is not provided."
-          }
+    message: "Configure Azure Blob Storage data source connection",
+    requestedSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          title: "Data source name",
+          description: "Unique within the Search service"
+        },
+        storageAccount: {
+          type: "string",
+          title: "Storage account name"
+        },
+        containerName: {
+          type: "string",
+          title: "Blob container name"
+        },
+        description: {
+          type: "string",
+          title: "Description"
+        },
+        connectionString: {
+          type: "string",
+          title: "Connection string",
+          description: "Full connection string (optional if providing account key)"
+        },
+        accountKey: {
+          type: "string",
+          title: "Account key",
+          description: "Storage account key (optional if providing connection string)"
+        },
+        highWaterMarkColumnName: {
+          type: "string",
+          title: "High water mark column",
+          description: "Column for change detection (default: metadata_storage_last_modified)"
         }
       },
-      highWaterMarkColumnName: {
-        type: "string",
-        title: "High water mark column",
-        default: "metadata_storage_last_modified"
-      }
-    },
-    required: ["name", "storageAccount", "containerName"]
+      required: ["name", "storageAccount", "containerName"]
+    }
   };
 }
 
-function buildSchemaForBlobSyncPlan() {
+function createBlobSyncPlanElicitation(): ElicitationRequest {
   return {
-    type: "object",
-    properties: {
-      storageAccount: { type: "string", title: "Storage account name" },
-      containerName: { type: "string", title: "Blob container name" },
-      absoluteRepoPath: { type: "string", title: "Absolute repo path", description: "Optional; defaults to current directory" },
-      strategy: {
-        type: "string",
-        title: "Sync strategy",
-        enum: ["localAzCli", "uploadBatch"],
-        default: "localAzCli"
-      }
-    },
-    required: ["storageAccount", "containerName"]
+    message: "Generate a local sync plan to push repository to Azure Blob Storage",
+    requestedSchema: {
+      type: "object",
+      properties: {
+        storageAccount: {
+          type: "string",
+          title: "Storage account name"
+        },
+        containerName: {
+          type: "string",
+          title: "Blob container name"
+        },
+        absoluteRepoPath: {
+          type: "string",
+          title: "Absolute repo path",
+          description: "Optional; defaults to current directory"
+        },
+        strategy: {
+          type: "string",
+          title: "Sync strategy",
+          description: "localAzCli uses helper script, uploadBatch uses direct Azure CLI",
+          enum: ["localAzCli", "uploadBatch"],
+          enumNames: ["Use helper script (filters artifacts)", "Direct Azure CLI upload"]
+        }
+      },
+      required: ["storageAccount", "containerName"]
+    }
   };
 }
 
@@ -78,7 +89,8 @@ function buildSchemaForBlobSyncPlan() {
  *  - createOrUpdateBlobDataSource
  *  - generateBlobSyncPlan
  */
-export function registerDataTools(server: any, getClient: GetClient) {
+export function registerDataTools(server: any, context: ToolContext) {
+  const { getClient, getSummarizer } = context;
   // ---------------- DATA SOURCES ----------------
   server.tool(
     "listDataSources",
@@ -89,7 +101,11 @@ export function registerDataTools(server: any, getClient: GetClient) {
         const client = getClient();
         const dataSources = await client.listDataSources();
         const names = dataSources.map((ds: any) => ds.name);
-        return await formatResponse({ dataSources: names, count: names.length });
+        const structuredData = { dataSources: names, count: names.length };
+        return await formatResponse(structuredData, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: structuredData
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "listDataSources" });
         return formatToolError(insight);
@@ -105,7 +121,10 @@ export function registerDataTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
         const ds = await client.getDataSource(name);
-        return await formatResponse(ds);
+        return await formatResponse(ds, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: ds
+        });
       } catch (e) {
         const { insight } = normalizeError(e, { tool: "getDataSource", name });
         return formatToolError(insight);
@@ -144,77 +163,75 @@ export function registerDataTools(server: any, getClient: GetClient) {
       try {
         const client = getClient();
 
-        // Local mutable copies for elicitation flow
-        let __name = name;
-        let __storageAccount = storageAccount;
-        let __containerName = containerName;
-        let __auth = auth;
-        let __description = description;
-        let __highWater = highWaterMarkColumnName;
-
-        // If required information is missing, try elicitation (if supported by client)
-        const needsAuth = !(__auth?.connectionString || __auth?.accountKey);
-        if ((!__name || !__storageAccount || !__containerName || needsAuth) && (server as any)?.server?.elicitInput) {
-          try {
-            const requestedSchema = buildSchemaForBlobDataSource();
-            const elicited = await (server as any).server.elicitInput({
-              message: "I'll help you configure an Azure Blob data source connection.",
-              requestedSchema
-            });
-            const a: any = (elicited as any)?.content ?? elicited ?? {};
-            __name = __name || a.name;
-            __storageAccount = __storageAccount || a.storageAccount;
-            __containerName = __containerName || a.containerName;
-            __description = (__description ?? a.description) || undefined;
-            __highWater = (__highWater ?? a.highWaterMarkColumnName) || "metadata_storage_last_modified";
-            __auth = __auth || a.auth || {};
-          } catch {
-            // Ignore elicitation errors and continue with provided params
+        // Check if we need to elicit missing parameters
+        const needsAuth = !(auth?.connectionString || auth?.accountKey);
+        if (needsElicitation({ name, storageAccount, containerName }, ["name", "storageAccount", "containerName"]) || needsAuth) {
+          const elicited = await elicitIfNeeded(context.agent || server, createBlobDataSourceElicitation());
+          if (elicited) {
+            name = name || elicited.name;
+            storageAccount = storageAccount || elicited.storageAccount;
+            containerName = containerName || elicited.containerName;
+            description = description ?? elicited.description;
+            highWaterMarkColumnName = highWaterMarkColumnName ?? elicited.highWaterMarkColumnName ?? "metadata_storage_last_modified";
+            
+            // Handle auth from elicitation
+            if (!auth) {
+              auth = {};
+              if (elicited.connectionString) {
+                auth.connectionString = elicited.connectionString;
+              } else if (elicited.accountKey) {
+                auth.accountKey = elicited.accountKey;
+              }
+            }
           }
         }
 
         const connectionString =
-          __auth?.connectionString ??
-          (__auth?.accountKey
-            ? `DefaultEndpointsProtocol=https;AccountName=${__storageAccount};AccountKey=${__auth.accountKey};EndpointSuffix=core.windows.net`
+          auth?.connectionString ??
+          (auth?.accountKey
+            ? `DefaultEndpointsProtocol=https;AccountName=${storageAccount};AccountKey=${auth.accountKey};EndpointSuffix=core.windows.net`
             : undefined);
 
-        if (!__name || !__storageAccount || !__containerName || !connectionString) {
+        if (!name || !storageAccount || !containerName || !connectionString) {
           const error = new Error(
             "Missing required parameters. Provide name, storageAccount, containerName, and either auth.connectionString or auth.accountKey."
           );
           const { insight } = normalizeError(error, {
             tool: "createOrUpdateBlobDataSource",
-            name: __name,
-            storageAccount: __storageAccount,
-            containerName: __containerName
+            name,
+            storageAccount,
+            containerName
           });
           return formatToolError(insight);
         }
 
         const dataSourceDefinition = {
-          name: __name,
+          name,
           type: "azureblob",
-          description: __description,
+          description,
           credentials: { connectionString },
-          container: { name: __containerName, query: null },
+          container: { name: containerName, query: null },
           dataChangeDetectionPolicy: {
             "@odata.type": "#Microsoft.Azure.Search.HighWaterMarkChangeDetectionPolicy",
-            highWaterMarkColumnName: __highWater || "metadata_storage_last_modified"
+            highWaterMarkColumnName: highWaterMarkColumnName || "metadata_storage_last_modified"
           },
           dataDeletionDetectionPolicy: null
         };
 
-        const result = await client.createOrUpdateDataSource(__name, dataSourceDefinition);
+        const result = await client.createOrUpdateDataSource(name, dataSourceDefinition);
 
         // Helpful add-on: return a convenience command to create the container if needed
-        const createContainerCommand = `az storage container create --account-name ${__storageAccount} --name ${__containerName}`;
+        const createContainerCommand = `az storage container create --account-name ${storageAccount} --name ${containerName}`;
 
-        return await formatResponse({
+        const structuredData = {
           success: true,
-          message: `Data source '${__name}' created/updated.`,
+          message: `Data source '${name}' created/updated.`,
           dataSource: result,
           nextSteps: [`If the container doesn't exist, create it locally:`, createContainerCommand]
+        };
+        return await formatResponse(structuredData, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: structuredData
         });
       } catch (e) {
         const { insight } = normalizeError(e, {
@@ -251,45 +268,33 @@ export function registerDataTools(server: any, getClient: GetClient) {
     },
     async ({ storageAccount, containerName, absoluteRepoPath, strategy }: any) => {
       try {
-        // Elicit missing info when supported
-        let __storageAccount = storageAccount;
-        let __containerName = containerName;
-        let __absoluteRepoPath = absoluteRepoPath;
-        let __strategy = strategy;
-
-        if ((!__storageAccount || !__containerName) && (server as any)?.server?.elicitInput) {
-          try {
-            const requestedSchema = buildSchemaForBlobSyncPlan();
-            const elicited = await (server as any).server.elicitInput({
-              message: "I'll help you generate a local sync plan to push this repo to Azure Blob Storage.",
-              requestedSchema
-            });
-            const a: any = (elicited as any)?.content ?? elicited ?? {};
-            __storageAccount = __storageAccount || a.storageAccount;
-            __containerName = __containerName || a.containerName;
-            __absoluteRepoPath = __absoluteRepoPath ?? a.absoluteRepoPath;
-            __strategy = __strategy ?? a.strategy ?? "localAzCli";
-          } catch {
-            // continue with provided params
+        // Check if we need to elicit missing parameters
+        if (needsElicitation({ storageAccount, containerName }, ["storageAccount", "containerName"])) {
+          const elicited = await elicitIfNeeded(context.agent || server, createBlobSyncPlanElicitation());
+          if (elicited) {
+            storageAccount = storageAccount || elicited.storageAccount;
+            containerName = containerName || elicited.containerName;
+            absoluteRepoPath = absoluteRepoPath ?? elicited.absoluteRepoPath;
+            strategy = strategy ?? elicited.strategy ?? "localAzCli";
           }
         }
 
-        if (!__storageAccount || !__containerName) {
+        if (!storageAccount || !containerName) {
           const error = new Error("Missing required parameters: storageAccount and containerName.");
           const { insight } = normalizeError(error, {
             tool: "generateBlobSyncPlan",
-            storageAccount: __storageAccount,
-            containerName: __containerName,
-            strategy: __strategy
+            storageAccount,
+            containerName,
+            strategy
           });
           return formatToolError(insight);
         }
 
-        const repoPath = __absoluteRepoPath || ".";
-        const createContainerCmd = `az storage container create --account-name ${__storageAccount} --name ${__containerName}`;
-        const localScriptCmd = `AZURE_STORAGE_ACCOUNT=${__storageAccount} AZURE_CONTAINER_NAME=${__containerName} ./sync-to-blob-local.sh`;
+        const repoPath = absoluteRepoPath || ".";
+        const createContainerCmd = `az storage container create --account-name ${storageAccount} --name ${containerName}`;
+        const localScriptCmd = `AZURE_STORAGE_ACCOUNT=${storageAccount} AZURE_CONTAINER_NAME=${containerName} ./sync-to-blob-local.sh`;
         const uploadBatchCmd =
-          `az storage blob upload-batch --account-name ${__storageAccount} -d ${__containerName} -s ${repoPath} ` +
+          `az storage blob upload-batch --account-name ${storageAccount} -d ${containerName} -s ${repoPath} ` +
           `--pattern "**/*" --no-progress`;
 
         const planLines = [
@@ -299,7 +304,7 @@ export function registerDataTools(server: any, getClient: GetClient) {
           createContainerCmd,
           "",
           "# 2) Sync repository files",
-          ...(__strategy === "localAzCli"
+          ...(strategy === "localAzCli"
             ? [
                 "# Uses your repo's helper script which filters out build artifacts and adds repo-metadata.json",
                 localScriptCmd
@@ -310,10 +315,10 @@ export function registerDataTools(server: any, getClient: GetClient) {
               ]),
           "",
           "# Optional: verify",
-          `az storage blob list --account-name ${__storageAccount} -c ${__containerName} --output table | head -n 20`
+          `az storage blob list --account-name ${storageAccount} -c ${containerName} --output table | head -n 20`
         ];
 
-        return await formatResponse({
+        const structuredData = {
           success: true,
           message: "Local sync plan generated.",
           plan: planLines.join("\n"),
@@ -326,6 +331,10 @@ export function registerDataTools(server: any, getClient: GetClient) {
             "./quick-setup-azure-sync.sh",
             "./sync-with-key.sh"
           ]
+        };
+        return await formatResponse(structuredData, {
+          summarizer: getSummarizer?.() || undefined,
+          structuredContent: structuredData
         });
       } catch (e) {
         const { insight } = normalizeError(e, {
