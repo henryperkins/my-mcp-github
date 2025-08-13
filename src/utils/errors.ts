@@ -1,7 +1,10 @@
 // src/utils/errors.ts
 /**
- * Map HTTP-ish errors to MCP error envelopes.
+ * @deprecated formatMcpError has moved to './response'.
+ * Re-exporting for backward compatibility.
  */
+export { formatMcpError } from "./response";
+/* >>> Deprecated content below kept commented out to prevent duplicate definitions >>> */
 export function formatMcpError(err: any, requestId?: string) {
   const status = err?.status ?? err?.response?.status;
   const map: Record<number, string> = {

@@ -1,6 +1,10 @@
 // src/utils/response-helper.ts
-import { formatResponse, formatToolError, normalizeError } from "./response";
-import { withTimeout } from "./timeout";
+/**
+ * @deprecated ResponseFormatter is now exported from './response'.
+ * This file remains only as a thin compatibility layer.
+ */
+export { ResponseFormatter } from "./response";
+/* >>> The original implementation has been deprecated and is now commented out to avoid duplicate declarations. */
 import { DEFAULT_TIMEOUT_MS } from "../constants";
 
 export interface ResponseFormatterOptions {

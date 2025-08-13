@@ -1,4 +1,9 @@
 // src/utils/response.ts
+/* eslint-disable @typescript-eslint/consistent-type-imports */
+// src/utils/response.ts
+import { withTimeout } from "./timeout";
+import { DEFAULT_TIMEOUT_MS } from "../constants";
+import { normalizeError } from "../insights";
 // Utilities for consistent MCP response formatting and error normalization
 
 export type MCPTextContent = { type: "text"; text: string };
@@ -194,4 +199,121 @@ export function formatToolError(insight: string | { message: string; [key: strin
 }
 
 // Re-export normalizeError so tools can import only from utils (to avoid cycles)
+/**
+ * Map HTTP-ish errors to MCP error envelopes.
+ */
+export function formatMcpError(err: any, requestId?: string) {
+  const status = err?.status ?? err?.response?.status;
+  const map: Record<number, string> = {
+    400: "invalid_request",
+    401: "unauthorized",
+    403: "unauthorized",
+    404: "resource_not_found",
+    409: "conflict",
+    412: "conflict",
+    429: "rate_limited",
+  };
+  const error = map[status] ?? (status >= 500 ? "server_error" : "unknown_error");
+  const body = {
+    error,
+    status,
+    message: String(err?.message ?? err),
+    requestId: requestId ?? err?.requestId ?? err?.headers?.["x-ms-request-id"],
+  };
+  return {
+    content: [{ type: "text", text: JSON.stringify(body, null, 2) }],
+    isError: true,
+  };
+}
+
+/**
+ * Standard response formatter for all tool operations
+ */
+export class ResponseFormatter {
+  constructor(
+    private readonly getSummarizer?: () =>
+      | ((text: string, maxTokens?: number) => Promise<string>)
+      | null
+  ) {}
+
+  /**
+   * Format a successful response
+   */
+  async formatSuccess(
+    result: any,
+    options?: {
+      summarizer?: ((text: string, maxTokens?: number) => Promise<string>) | null;
+      structuredContent?: any;
+    }
+  ): Promise<any> {
+    const summarizerCandidate =
+      options?.summarizer !== undefined
+        ? options.summarizer
+        : this.getSummarizer?.();
+
+    const summarizer =
+      summarizerCandidate === null ? undefined : summarizerCandidate;
+
+    return formatResponse(result, {
+      summarizer,
+      structuredContent: options?.structuredContent ?? result,
+    });
+  }
+
+  /**
+   * Format an error response with context
+   */
+  formatError(error: any, context: Record<string, any>): any {
+    const { insight } = normalizeError(error, context);
+    return formatToolError(insight);
+  }
+
+  /**
+   * Wrap a potentially long-running operation with a timeout.
+   * Accepts either a thunk (() => Promise) *preferred* or an already-started Promise.
+   */
+  async executeWithTimeout<T>(
+    operation: Promise<T> | (() => Promise<T>),
+    timeoutMs: number = DEFAULT_TIMEOUT_MS,
+    operationName: string,
+    errorContext: Record<string, any>
+  ): Promise<any> {
+    try {
+      const op = typeof operation === "function" ? (operation as () => Promise<T>) : () => operation;
+      const result = await withTimeout(op, timeoutMs, operationName);
+      return this.formatSuccess(result);
+    } catch (error) {
+      return this.formatError(error, { ...errorContext, operation: operationName });
+    }
+  }
+
+  /**
+   * Create a standard tool executor with timeout and error handling
+   */
+  createToolExecutor<TParams>(
+    toolName: string,
+    timeoutMs: number = DEFAULT_TIMEOUT_MS
+  ) {
+    return async (
+      params: TParams,
+      operation: (params: TParams) => Promise<any>,
+      additionalContext?: Record<string, any>
+    ): Promise<any> => {
+      const errorContext = {
+        tool: toolName,
+        ...params,
+        ...additionalContext,
+      };
+
+      try {
+        const result = await withTimeout(() => operation(params), timeoutMs, toolName);
+        return this.formatSuccess(result);
+      } catch (error) {
+        return this.formatError(error, errorContext);
+      }
+    };
+  }
+}
+
 export { normalizeError } from "../insights";
+export { ResponseFormatter, formatMcpError };
