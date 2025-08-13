@@ -1,4 +1,15 @@
 // Simple Azure Search REST API client for Cloudflare Workers
+import type {
+  IndexDefinition,
+  SynonymMap,
+  DataSource,
+  SearchRequestBody,
+  SearchResults,
+  IndexBatch,
+  OperationResult,
+  SearchDocument,
+} from "./types";
+
 export class AzureSearchClient {
   private endpoint: string;
   private apiKey: string;
@@ -9,7 +20,7 @@ export class AzureSearchClient {
     this.apiKey = apiKey;
   }
 
-  private json(o: any) {
+  private json(o: unknown) {
     return JSON.stringify(o);
   }
 
@@ -21,7 +32,7 @@ export class AzureSearchClient {
     };
   }
 
-  private async request(path: string, options: RequestInit = {}): Promise<any> {
+  private async request(path: string, options: RequestInit = {}): Promise<unknown> {
     const url = `${this.endpoint}${path}${path.includes('?') ? '&' : '?'}api-version=${this.apiVersion}`;
     const response = await fetch(url, {
       ...options,
@@ -48,160 +59,160 @@ export class AzureSearchClient {
   }
 
   // Index operations
-  async listIndexes() {
-    const result = await this.request('/indexes');
+  async listIndexes(): Promise<Array<{ name: string; defaultScoringProfile?: string; corsOptions?: unknown; fields?: unknown[] }>> {
+    const result = (await this.request('/indexes')) as { value?: Array<{ name: string; defaultScoringProfile?: string; corsOptions?: unknown; fields?: unknown[] }> };
     return result.value || [];
   }
 
-  async getIndex(indexName: string) {
+  async getIndex(indexName: string): Promise<IndexDefinition | unknown> {
     return this.request(`/indexes/${indexName}`);
   }
 
-  async createOrUpdateIndex(indexName: string, indexDefinition: any) {
+  async createOrUpdateIndex(indexName: string, indexDefinition: IndexDefinition): Promise<IndexDefinition | unknown> {
     return this.request(`/indexes/${indexName}`, {
       method: 'PUT',
       body: JSON.stringify(indexDefinition),
     });
   }
 
-  async deleteIndex(indexName: string) {
+  async deleteIndex(indexName: string): Promise<unknown> {
     return this.request(`/indexes/${indexName}`, {
       method: 'DELETE',
     });
   }
 
-  async getIndexStats(indexName: string) {
+  async getIndexStats(indexName: string): Promise<unknown> {
     return this.request(`/indexes/${indexName}/stats`);
   }
 
   // Document operations
-  async searchDocuments(indexName: string, searchParams: any) {
+  async searchDocuments(indexName: string, searchParams: SearchRequestBody): Promise<SearchResults> {
     return this.request(`/indexes/${indexName}/docs/search`, {
       method: 'POST',
       body: JSON.stringify(searchParams),
-    });
+    }) as Promise<SearchResults>;
   }
 
-  async getDocument(indexName: string, key: string, select?: string[]) {
+  async getDocument(indexName: string, key: string, select?: string[]): Promise<unknown> {
     const params = select ? `?$select=${select.join(',')}` : '';
     return this.request(`/indexes/${indexName}/docs/${encodeURIComponent(key)}${params}`);
   }
 
-  async getDocumentCount(indexName: string) {
-    const result = await this.request(`/indexes/${indexName}/docs/$count`);
+  async getDocumentCount(indexName: string): Promise<number> {
+    const result = (await this.request(`/indexes/${indexName}/docs/$count`)) as number;
     return result;
   }
 
   // Data source operations
-  async listDataSources() {
-    const result = await this.request('/datasources');
+  async listDataSources(): Promise<unknown[]> {
+    const result = (await this.request('/datasources')) as { value?: unknown[] };
     return result.value || [];
   }
 
-  async getDataSource(name: string) {
+  async getDataSource(name: string): Promise<unknown> {
     return this.request(`/datasources/${name}`);
   }
 
-  async createOrUpdateDataSource(name: string, dataSourceDefinition: any) {
+  async createOrUpdateDataSource(name: string, dataSourceDefinition: DataSource): Promise<DataSource | unknown> {
     return this.request(`/datasources/${name}`, {
       method: 'PUT',
       body: JSON.stringify(dataSourceDefinition),
     });
   }
 
-  async deleteDataSource(name: string) {
+  async deleteDataSource(name: string): Promise<unknown> {
     return this.request(`/datasources/${name}`, {
       method: 'DELETE',
     });
   }
 
   // Indexer operations
-  async listIndexers() {
-    const result = await this.request('/indexers');
+  async listIndexers(): Promise<unknown[]> {
+    const result = (await this.request('/indexers')) as { value?: unknown[] };
     return result.value || [];
   }
 
-  async getIndexer(name: string) {
+  async getIndexer(name: string): Promise<unknown> {
     return this.request(`/indexers/${name}`);
   }
 
-  async createOrUpdateIndexer(name: string, indexerDefinition: any) {
+  async createOrUpdateIndexer(name: string, indexerDefinition: unknown): Promise<unknown> {
     return this.request(`/indexers/${name}`, {
       method: 'PUT',
       body: JSON.stringify(indexerDefinition),
     });
   }
 
-  async deleteIndexer(name: string) {
+  async deleteIndexer(name: string): Promise<unknown> {
     return this.request(`/indexers/${name}`, {
       method: 'DELETE',
     });
   }
 
-  async runIndexer(name: string) {
+  async runIndexer(name: string): Promise<unknown> {
     return this.request(`/indexers/${name}/run`, {
       method: 'POST',
     });
   }
 
-  async resetIndexer(name: string) {
+  async resetIndexer(name: string): Promise<unknown> {
     return this.request(`/indexers/${name}/reset`, {
       method: 'POST',
     });
   }
 
-  async getIndexerStatus(name: string) {
+  async getIndexerStatus(name: string): Promise<unknown> {
     return this.request(`/indexers/${name}/status`);
   }
 
   // Skillset operations
-  async listSkillsets() {
-    const result = await this.request('/skillsets');
+  async listSkillsets(): Promise<unknown[]> {
+    const result = (await this.request('/skillsets')) as { value?: unknown[] };
     return result.value || [];
   }
 
-  async getSkillset(name: string) {
+  async getSkillset(name: string): Promise<unknown> {
     return this.request(`/skillsets/${name}`);
   }
 
-  async createOrUpdateSkillset(name: string, skillsetDefinition: any) {
+  async createOrUpdateSkillset(name: string, skillsetDefinition: unknown): Promise<unknown> {
     return this.request(`/skillsets/${name}`, {
       method: 'PUT',
       body: JSON.stringify(skillsetDefinition),
     });
   }
 
-  async deleteSkillset(name: string) {
+  async deleteSkillset(name: string): Promise<unknown> {
     return this.request(`/skillsets/${name}`, {
       method: 'DELETE',
     });
   }
 
   // Synonym Map operations
-  async listSynonymMaps() {
-    const result = await this.request('/synonymmaps');
+  async listSynonymMaps(): Promise<unknown[]> {
+    const result = (await this.request('/synonymmaps')) as { value?: unknown[] };
     return result.value || [];
   }
 
-  async getSynonymMap(name: string) {
+  async getSynonymMap(name: string): Promise<unknown> {
     return this.request(`/synonymmaps/${name}`);
   }
 
-  async createOrUpdateSynonymMap(name: string, synonymMapDefinition: any) {
+  async createOrUpdateSynonymMap(name: string, synonymMapDefinition: SynonymMap): Promise<SynonymMap | unknown> {
     return this.request(`/synonymmaps/${name}`, {
       method: 'PUT',
       body: JSON.stringify(synonymMapDefinition),
     });
   }
 
-  async deleteSynonymMap(name: string) {
+  async deleteSynonymMap(name: string): Promise<unknown> {
     return this.request(`/synonymmaps/${name}`, {
       method: 'DELETE',
     });
   }
 
   // Enhanced Index operations
-  async createIndex(indexDefinition: any) {
+  async createIndex(indexDefinition: IndexDefinition): Promise<IndexDefinition | unknown> {
     return this.request('/indexes', {
       method: 'POST',
       body: JSON.stringify(indexDefinition),
@@ -209,77 +220,78 @@ export class AzureSearchClient {
   }
 
   // Enhanced Document operations
-  async indexDocuments(indexName: string, batch: any) {
+  async indexDocuments(indexName: string, batch: IndexBatch): Promise<OperationResult> {
     return this.request(`/indexes/${indexName}/docs/index`, {
       method: 'POST',
       body: JSON.stringify(batch),
-    });
+    }) as Promise<OperationResult>;
   }
 
-  async uploadDocuments(indexName: string, documents: any[]) {
+  async uploadDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
       value: documents.map(doc => ({
-        '@search.action': 'upload',
+        '@search.action': 'upload' as const,
         ...doc
       }))
     };
     return this.indexDocuments(indexName, batch);
   }
 
-  async mergeDocuments(indexName: string, documents: any[]) {
+  async mergeDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
       value: documents.map(doc => ({
-        '@search.action': 'merge',
+        '@search.action': 'merge' as const,
         ...doc
       }))
     };
     return this.indexDocuments(indexName, batch);
   }
 
-  async mergeOrUploadDocuments(indexName: string, documents: any[]) {
+  async mergeOrUploadDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
       value: documents.map(doc => ({
-        '@search.action': 'mergeOrUpload',
+        '@search.action': 'mergeOrUpload' as const,
         ...doc
       }))
     };
     return this.indexDocuments(indexName, batch);
   }
 
-  async deleteDocuments(indexName: string, keys: any[]) {
-    const batch = {
-      value: keys.map(key => ({
-        '@search.action': 'delete',
-        ...key
-      }))
+  async deleteDocuments(indexName: string, keys: Array<Record<string, unknown> | string | number>): Promise<OperationResult> {
+    const batch: IndexBatch = {
+      value: keys.map((key) =>
+        typeof key === 'object' && key !== null
+          ? { '@search.action': 'delete', ...(key as Record<string, unknown>) }
+          : { '@search.action': 'delete', key }
+      ) as IndexBatch["value"],
     };
     return this.indexDocuments(indexName, batch);
   }
 
   // -------- Service/Stats --------
-  async getServiceStatistics() {
+  async getServiceStatistics(): Promise<unknown> {
     return this.request(`/servicestats`);
   }
-  async getIndexStatsSummary() {
+  async getIndexStatsSummary(): Promise<unknown> {
     return this.request(`/indexstats`);
   }
 
   // -------- Analyze / Suggest / Autocomplete --------
-  async analyzeText(indexName: string, body: any) {
+  async analyzeText(indexName: string, body: Record<string, unknown>): Promise<unknown> {
     return this.request(`/indexes/${encodeURIComponent(indexName)}/search.analyze`, {
       method: "POST",
       body: this.json(body),
       headers: this.headers(),
     });
   }
-  async suggest(indexName: string, body: any) {
+  async suggest(indexName: string, body: Record<string, unknown>): Promise<unknown> {
     return this.request(`/indexes/${encodeURIComponent(indexName)}/docs/suggest`, {
       method: "POST",
       body: this.json(body),
       headers: this.headers(),
     });
   }
-  async autocomplete(indexName: string, body: any) {
+  async autocomplete(indexName: string, body: Record<string, unknown>): Promise<unknown> {
     return this.request(`/indexes/${encodeURIComponent(indexName)}/docs/autocomplete`, {
       method: "POST",
       body: this.json(body),
@@ -288,27 +300,27 @@ export class AzureSearchClient {
   }
 
   // -------- Knowledge Agents (preview) --------
-  async listAgents() {
+  async listAgents(): Promise<unknown> {
     return this.request(`/agents`);
   }
-  async getAgent(agentName: string) {
+  async getAgent(agentName: string): Promise<unknown> {
     return this.request(`/agents('${encodeURIComponent(agentName)}')`);
   }
-  async upsertAgent(agentName: string, agent: any, headers: Record<string,string> = {}) {
+  async upsertAgent(agentName: string, agent: unknown, headers: Record<string,string> = {}): Promise<unknown> {
     return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
       method: "PUT",
       headers: this.headers(headers),
       body: this.json(agent),
     });
   }
-  async createAgent(agent: any) {
+  async createAgent(agent: unknown): Promise<unknown> {
     return this.request(`/agents`, {
       method: "POST",
       headers: this.headers(),
       body: this.json(agent),
     });
   }
-  async deleteAgent(agentName: string, headers: Record<string,string> = {}) {
+  async deleteAgent(agentName: string, headers: Record<string,string> = {}): Promise<unknown> {
     return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
       method: "DELETE",
       headers: this.headers(headers),

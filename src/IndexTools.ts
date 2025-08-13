@@ -4,7 +4,6 @@ import { IndexBuilder, IndexTemplates } from "./index-builder";
 import { ResponseFormatter } from "./utils/response-helper";
 import { resolveAnalyzerForLanguage } from "./utils/languageAnalyzers";
 import getToolHints from "./utils/toolHints";
-import { encodeCursor, decodeCursor } from "./utils/pagination";
 import { paginateArray } from "./utils/streaming-pagination";
 import { withTimeout } from "./utils/timeout";
 import type { ToolContext } from "./types";
@@ -66,7 +65,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
       includeStats: z.boolean().optional().describe("Include document count and storage size for each index"),
       verbose: z.boolean().optional().describe("Include full index definitions (fields, analyzers, etc.)"),
     },
-    async ({ includeStats, verbose }: any) => {
+    async ({ includeStats, verbose }: { includeStats?: boolean; verbose?: boolean }) => {
       try {
         const client = getClient();
         const indexes = await client.listIndexes();
@@ -126,7 +125,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
     "getIndex",
     "Fetch full index definition.",
     { indexName: z.string() },
-    async ({ indexName }: any) => {
+    async ({ indexName }: { indexName: string }) => {
       try {
         const client = getClient();
         const exec = rf.createToolExecutor<{ indexName: string }>("getIndex", DEFAULT_TIMEOUT_MS);
@@ -142,16 +141,16 @@ export function registerIndexTools(server: any, context: ToolContext) {
     "getIndexStats",
     "Get document count and storage usage.",
     { indexName: z.string() },
-    async ({ indexName }: any) => {
+    async ({ indexName }: { indexName: string }) => {
       try {
         const client = getClient();
-        const stats = await client.getIndexStats(indexName);
+        const stats: any = await client.getIndexStats(indexName);
 
         // Add diagnostic information if vectorIndexSize is 0
         if (stats && stats.vectorIndexSize === 0) {
           // Fetch index definition to check for vector fields
           try {
-            const indexDef = await client.getIndex(indexName);
+            const indexDef: any = await client.getIndex(indexName);
             const hasVectorFields = indexDef.fields?.some(
               (f: any) => f.type === "Collection(Edm.Single)" || f.type === "Edm.Vector" || (f.dimensions && f.dimensions > 0),
             );
@@ -178,7 +177,7 @@ export function registerIndexTools(server: any, context: ToolContext) {
     "deleteIndex",
     "⚠️ DESTRUCTIVE: Permanently delete an index and all its documents. This action cannot be undone. Please confirm carefully before proceeding.",
     { indexName: z.string() },
-    async ({ indexName }: any) => {
+    async ({ indexName }: { indexName: string }) => {
       try {
         const client = getClient();
 

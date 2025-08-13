@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { ResponseFormatter } from "./utils/response-helper";
 import type { ToolContext } from "./types";
+import { SynonymMapSchema } from "./schemas";
 import { DEFAULT_TIMEOUT_MS } from "./constants";
 
 /**
@@ -23,8 +24,8 @@ export function registerSynonymTools(server: any, context: ToolContext) {
   server.tool("listSynonymMaps", "List synonym map names.", {}, async () => {
     const client = getClient();
     return rf.executeWithTimeout(
-      client.listSynonymMaps().then((synonymMaps: any[]) => {
-        const names = synonymMaps.map((sm: any) => sm.name);
+      client.listSynonymMaps().then((synonymMaps: unknown[]) => {
+        const names = (synonymMaps as Array<{ name?: string }>).map((sm) => sm.name || "").filter(Boolean);
         return { synonymMaps: names, count: names.length };
       }),
       DEFAULT_TIMEOUT_MS,
@@ -33,17 +34,18 @@ export function registerSynonymTools(server: any, context: ToolContext) {
     );
   });
 
-  server.tool("getSynonymMap", "Get a synonym map definition.", { name: z.string() }, async ({ name }: any) => {
+  server.tool("getSynonymMap", "Get a synonym map definition.", { name: z.string() }, async ({ name }: { name: string }) => {
     const client = getClient();
     return rf.executeWithTimeout(
-      client.getSynonymMap(name).then((sm: any) => {
-        if (sm && sm.synonyms && typeof sm.synonyms === "string") {
-          const formattedSm: any = {
-            ...sm,
-            synonymsFormatted: sm.synonyms.split("\n").filter((line: string) => line.trim()),
-            synonymsRaw: sm.synonyms,
+      client.getSynonymMap(name).then((sm: unknown) => {
+        const s = sm as { synonyms?: unknown } | undefined;
+        if (s && typeof s.synonyms === "string") {
+          const formattedSm: Record<string, unknown> = {
+            ...(sm as Record<string, unknown>),
+            synonymsFormatted: s.synonyms.split("\n").filter((line: string) => line.trim()),
+            synonymsRaw: s.synonyms,
           };
-          formattedSm.synonyms = formattedSm.synonymsFormatted;
+          (formattedSm as any).synonyms = (formattedSm as any).synonymsFormatted;
           return formattedSm;
         }
         return sm;
@@ -54,20 +56,16 @@ export function registerSynonymTools(server: any, context: ToolContext) {
     );
   });
 
+  const CreateOrUpdateSynonymMapSchema = z.object({
+    name: z.string(),
+    synonymMapDefinition: SynonymMapSchema,
+  });
+
   server.tool(
     "createOrUpdateSynonymMap",
     "Create or update a synonym map to improve search relevance. Define equivalent terms (USA, United States), one-way mappings (cat => feline), or explicit mappings. Use Solr format for synonym rules.",
-    {
-      name: z.string(),
-      synonymMapDefinition: z.object({
-        name: z.string(),
-        format: z.string().default("solr"),
-        synonyms: z.string().describe("Synonym rules in Solr format"),
-        encryptionKey: z.any().optional(),
-        "@odata.etag": z.string().optional(),
-      }),
-    },
-    async ({ name, synonymMapDefinition }: any) => {
+    CreateOrUpdateSynonymMapSchema,
+    async ({ name, synonymMapDefinition }: z.infer<typeof CreateOrUpdateSynonymMapSchema>) => {
       const client = getClient();
       return rf.executeWithTimeout(
         client.createOrUpdateSynonymMap(name, synonymMapDefinition),
@@ -78,7 +76,7 @@ export function registerSynonymTools(server: any, context: ToolContext) {
     },
   );
 
-  server.tool("deleteSynonymMap", "Delete a synonym map.", { name: z.string() }, async ({ name }: any) => {
+  server.tool("deleteSynonymMap", "Delete a synonym map.", { name: z.string() }, async ({ name }: { name: string }) => {
     try {
       const client = getClient();
       await rf.executeWithTimeout(client.deleteSynonymMap(name), DEFAULT_TIMEOUT_MS, "deleteSynonymMap", {

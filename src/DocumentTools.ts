@@ -42,7 +42,7 @@ export function registerDocumentTools(server: any, context: ToolContext) {
       }
 
       const body = {
-        search,
+        search: search || "*",
         top,
         skip,
         ...(select && { select: select.join(",") }),
@@ -51,6 +51,13 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         ...(orderBy && { orderby: orderBy }),
         ...(includeTotalCount && { count: true }),
       };
+
+      if (!indexName) {
+        return rf.formatError(new Error("Missing required parameter: indexName"), {
+          tool: "searchDocuments",
+          ...body,
+        });
+      }
 
       const exec = rf.createToolExecutor<typeof params>("searchDocuments", DEFAULT_TIMEOUT_MS);
       return exec(
@@ -102,8 +109,8 @@ export function registerDocumentTools(server: any, context: ToolContext) {
 
   // ---------------- DOCUMENT OPERATIONS ----------------
   const UploadDocumentsSchema = z.object({
-    indexName: IndexNameSchema,
-    documents: DocumentBatchSchema.describe("Array of documents to upload"),
+    indexName: IndexNameSchema.optional(),
+    documents: DocumentBatchSchema.optional().describe("Array of documents to upload"),
   });
 
   server.tool(
@@ -122,19 +129,27 @@ export function registerDocumentTools(server: any, context: ToolContext) {
         }
       }
 
+      if (!indexName || !documents || documents.length === 0) {
+        return rf.formatError(new Error("Missing required parameters: indexName and documents"), {
+          tool: "uploadDocuments",
+          indexName,
+          documentCount: documents?.length,
+        });
+      }
+
       const exec = rf.createToolExecutor<typeof params>("uploadDocuments", DEFAULT_TIMEOUT_MS);
-      return exec({ indexName, documents } as any, () => client.uploadDocuments(indexName, documents), {
+      return exec({ indexName, documents }, () => client.uploadDocuments(indexName, documents), {
         tool: "uploadDocuments",
         indexName,
-        documentCount: documents?.length,
+        documentCount: documents.length,
       });
     },
     getToolHints("POST"),
   );
 
   const MergeDocumentsSchema = z.object({
-    indexName: IndexNameSchema,
-    documents: DocumentBatchSchema.describe("Array of documents to merge"),
+    indexName: IndexNameSchema.optional(),
+    documents: DocumentBatchSchema.optional().describe("Array of documents to merge"),
   });
 
   server.tool(
@@ -144,19 +159,28 @@ export function registerDocumentTools(server: any, context: ToolContext) {
     async (params: z.infer<typeof MergeDocumentsSchema>) => {
       const { indexName, documents } = params;
       const client = getClient();
+      
+      if (!indexName || !documents || documents.length === 0) {
+        return rf.formatError(new Error("Missing required parameters: indexName and documents"), {
+          tool: "mergeDocuments",
+          indexName,
+          documentCount: documents?.length,
+        });
+      }
+
       const exec = rf.createToolExecutor<typeof params>("mergeDocuments", DEFAULT_TIMEOUT_MS);
-      return exec(params, (p) => client.mergeDocuments(p.indexName, p.documents), {
+      return exec({ indexName, documents }, (p) => client.mergeDocuments(p.indexName!, p.documents!), {
         tool: "mergeDocuments",
         indexName,
-        documentCount: documents?.length,
+        documentCount: documents.length,
       });
     },
     getToolHints("POST"),
   );
 
   const MergeOrUploadDocumentsSchema = z.object({
-    indexName: IndexNameSchema,
-    documents: DocumentBatchSchema.describe("Array of documents to merge or upload"),
+    indexName: IndexNameSchema.optional(),
+    documents: DocumentBatchSchema.optional().describe("Array of documents to merge or upload"),
   });
 
   server.tool(
@@ -166,21 +190,31 @@ export function registerDocumentTools(server: any, context: ToolContext) {
     async (params: z.infer<typeof MergeOrUploadDocumentsSchema>) => {
       const { indexName, documents } = params;
       const client = getClient();
+      
+      if (!indexName || !documents || documents.length === 0) {
+        return rf.formatError(new Error("Missing required parameters: indexName and documents"), {
+          tool: "mergeOrUploadDocuments",
+          indexName,
+          documentCount: documents?.length,
+        });
+      }
+
       const exec = rf.createToolExecutor<typeof params>("mergeOrUploadDocuments", DEFAULT_TIMEOUT_MS);
-      return exec(params, (p) => client.mergeOrUploadDocuments(p.indexName, p.documents), {
+      return exec({ indexName, documents }, (p) => client.mergeOrUploadDocuments(p.indexName!, p.documents!), {
         tool: "mergeOrUploadDocuments",
         indexName,
-        documentCount: documents?.length,
+        documentCount: documents.length,
       });
     },
     getToolHints("POST"),
   );
 
   const DeleteDocumentsSchema = z.object({
-    indexName: IndexNameSchema,
+    indexName: IndexNameSchema.optional(),
     keys: z
       .array(DocumentKeySchema.transform(String))
       .min(1, "At least one key must be provided")
+      .optional()
       .describe("Array of document keys to delete"),
   });
 
@@ -191,11 +225,20 @@ export function registerDocumentTools(server: any, context: ToolContext) {
     async (params: z.infer<typeof DeleteDocumentsSchema>) => {
       const { indexName, keys } = params;
       const client = getClient();
+      
+      if (!indexName || !keys || keys.length === 0) {
+        return rf.formatError(new Error("Missing required parameters: indexName and keys"), {
+          tool: "deleteDocuments",
+          indexName,
+          keyCount: keys?.length,
+        });
+      }
+
       const exec = rf.createToolExecutor<typeof params>("deleteDocuments", DEFAULT_TIMEOUT_MS);
-      return exec(params, (p) => client.deleteDocuments(p.indexName, p.keys), {
+      return exec({ indexName, keys }, (p) => client.deleteDocuments(p.indexName!, p.keys!), {
         tool: "deleteDocuments",
         indexName,
-        keyCount: keys?.length,
+        keyCount: keys.length,
       });
     },
     getToolHints("DELETE"),

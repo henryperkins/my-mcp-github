@@ -22,8 +22,8 @@ export function registerSkillTools(server: any, context: ToolContext) {
   server.tool("listSkillsets", "List skillset names.", {}, async () => {
     // Fetch skillsets and structure the response
     const client = getClient();
-    const skillsets = await client.listSkillsets();
-    const names = skillsets.map((ss: any) => ss.name);
+    const skillsets = (await client.listSkillsets()) as Array<{ name?: string } | unknown>;
+    const names = (skillsets as Array<{ name?: string }>).map((ss) => ss.name || "").filter(Boolean);
     const structuredData = { skillsets: names, count: names.length };
 
     return rf.formatSuccess(structuredData);

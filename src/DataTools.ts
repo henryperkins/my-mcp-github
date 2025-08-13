@@ -101,8 +101,8 @@ export function registerDataTools(server: any, context: ToolContext) {
   server.tool("listDataSources", "List data source connection names.", {}, async () => {
     const client = getClient();
     return rf.executeWithTimeout(
-      client.listDataSources().then((dataSources: any[]) => {
-        const names = dataSources.map((ds: any) => ds.name);
+      client.listDataSources().then((dataSources: unknown[]) => {
+        const names = (dataSources as Array<{ name?: string }>).map(ds => ds.name || "").filter(Boolean);
         return { dataSources: names, count: names.length };
       }),
       DEFAULT_TIMEOUT_MS,
@@ -111,37 +111,39 @@ export function registerDataTools(server: any, context: ToolContext) {
     );
   });
 
-  server.tool("getDataSource", "Get a data source connection.", { name: z.string() }, async ({ name }: any) => {
+  server.tool("getDataSource", "Get a data source connection.", { name: z.string() }, async ({ name }: { name: string }) => {
     const client = getClient();
     return rf.executeWithTimeout(client.getDataSource(name), DEFAULT_TIMEOUT_MS, "getDataSource", { tool: "getDataSource", name });
   });
 
   // NEW: Create or update an Azure Blob data source
+  const CreateOrUpdateBlobDataSourceSchema = z.object({
+    name: z.string().optional().describe("Data source name (unique within the Search service)"),
+    storageAccount: z.string().optional().describe("Azure Storage account name"),
+    containerName: z.string().optional().describe("Blob container name"),
+    auth: z
+      .object({
+        connectionString: z
+          .string()
+          .optional()
+          .describe(
+            "Full connection string, e.g. DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
+          ),
+        accountKey: z
+          .string()
+          .optional()
+          .describe("If provided, a connection string will be constructed from storageAccount + accountKey"),
+      })
+      .optional(),
+    description: z.string().optional(),
+    highWaterMarkColumnName: z.string().optional().default("metadata_storage_last_modified"),
+  });
+
   server.tool(
     "createOrUpdateBlobDataSource",
     "Create or update an Azure Blob Storage data source connection. Provide a connectionString or accountKey.",
-    {
-      name: z.string().describe("Data source name (unique within the Search service)"),
-      storageAccount: z.string().describe("Azure Storage account name"),
-      containerName: z.string().describe("Blob container name"),
-      auth: z
-        .object({
-          connectionString: z
-            .string()
-            .optional()
-            .describe(
-              "Full connection string, e.g. DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
-            ),
-          accountKey: z
-            .string()
-            .optional()
-            .describe("If provided, a connection string will be constructed from storageAccount + accountKey"),
-        })
-        .optional(),
-      description: z.string().optional(),
-      highWaterMarkColumnName: z.string().optional().default("metadata_storage_last_modified"),
-    },
-    async ({ name, storageAccount, containerName, auth, description, highWaterMarkColumnName }: any) => {
+    CreateOrUpdateBlobDataSourceSchema,
+    async ({ name, storageAccount, containerName, auth, description, highWaterMarkColumnName }: z.infer<typeof CreateOrUpdateBlobDataSourceSchema>) => {
       try {
         const client = getClient();
 
@@ -188,10 +190,10 @@ export function registerDataTools(server: any, context: ToolContext) {
 
         const dataSourceDefinition = {
           name,
-          type: "azureblob",
+          type: "azureblob" as const,
           description,
           credentials: { connectionString },
-          container: { name: containerName, query: null },
+          container: { name: containerName, query: undefined },
           dataChangeDetectionPolicy: {
             "@odata.type": "#Microsoft.Azure.Search.HighWaterMarkChangeDetectionPolicy",
             highWaterMarkColumnName: highWaterMarkColumnName || "metadata_storage_last_modified",
@@ -200,7 +202,7 @@ export function registerDataTools(server: any, context: ToolContext) {
         };
 
         return rf.executeWithTimeout(
-          client.createOrUpdateDataSource(name, dataSourceDefinition).then((result: any) => {
+          client.createOrUpdateDataSource(name, dataSourceDefinition).then((result: unknown) => {
             const createContainerCommand = `az storage container create --account-name ${storageAccount} --name ${containerName}`;
             return {
               success: true,
@@ -226,22 +228,24 @@ export function registerDataTools(server: any, context: ToolContext) {
 
   // ---------------- SYNC PLAN (LOCAL) ----------------
   // Generates safe, copy-paste commands leveraging local Azure CLI and the repo's existing scripts.
+  const GenerateBlobSyncPlanSchema = z.object({
+    storageAccount: z.string().optional(),
+    containerName: z.string().optional(),
+    absoluteRepoPath: z
+      .string()
+      .optional()
+      .describe("Optional absolute path to the repo root for upload-batch; if omitted, use current directory"),
+    strategy: z
+      .enum(["localAzCli", "uploadBatch"])
+      .default("localAzCli")
+      .describe("localAzCli uses sync-to-blob-local.sh; uploadBatch shows az storage blob upload-batch directly"),
+  });
+
   server.tool(
     "generateBlobSyncPlan",
     "Generate a local sync plan to push this repo to an Azure Blob container using Azure CLI.",
-    {
-      storageAccount: z.string(),
-      containerName: z.string(),
-      absoluteRepoPath: z
-        .string()
-        .optional()
-        .describe("Optional absolute path to the repo root for upload-batch; if omitted, use current directory"),
-      strategy: z
-        .enum(["localAzCli", "uploadBatch"])
-        .default("localAzCli")
-        .describe("localAzCli uses sync-to-blob-local.sh; uploadBatch shows az storage blob upload-batch directly"),
-    },
-    async ({ storageAccount, containerName, absoluteRepoPath, strategy }: any) => {
+    GenerateBlobSyncPlanSchema,
+    async ({ storageAccount, containerName, absoluteRepoPath, strategy }: z.infer<typeof GenerateBlobSyncPlanSchema>) => {
       try {
         // Check if we need to elicit missing parameters
         if (needsElicitation({ storageAccount, containerName }, ["storageAccount", "containerName"])) {

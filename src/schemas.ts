@@ -49,8 +49,8 @@ export const DocumentBatchSchema = z.array(DocumentSchema)
 
 // Search parameters
 export const SearchParamsSchema = z.object({
-  indexName: IndexNameSchema,
-  search: z.string().default("*"),
+  indexName: IndexNameSchema.optional(),
+  search: z.string().default("*").optional(),
   top: z.number()
     .int()
     .positive()

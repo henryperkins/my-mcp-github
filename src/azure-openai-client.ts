@@ -45,7 +45,10 @@ Keep the summary structured and easy to scan.`;
       return content;
     }
 
-    const result = await response.json() as any;
+    interface ChatMessage { content?: string }
+    interface ChatChoice { message?: ChatMessage }
+    interface ChatCompletionsResponse { choices?: ChatChoice[] }
+    const result = (await response.json()) as ChatCompletionsResponse;
     return result.choices?.[0]?.message?.content || content;
   }
 

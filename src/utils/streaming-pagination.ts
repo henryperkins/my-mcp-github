@@ -3,7 +3,12 @@
  * Efficient streaming pagination utilities that avoid loading all data into memory
  */
 
-import { encodeCursor, decodeCursor } from "./pagination";
+// Cursor encoding/decoding utilities
+const encodeCursor = (o: any) =>
+  Buffer.from(JSON.stringify(o)).toString("base64");
+
+const decodeCursor = (c?: string) =>
+  c ? JSON.parse(Buffer.from(c, "base64").toString()) : {};
 
 export interface PaginationOptions {
   pageSize: number;
@@ -27,12 +32,12 @@ export function paginateArray<T>(
 ): PaginatedResponse<T> {
   const { pageSize, cursor } = options;
   const { offset = 0 } = decodeCursor(cursor);
-  
+
   // Validate offset bounds
   if (offset < 0) {
     throw new Error("Invalid cursor: negative offset");
   }
-  
+
   if (offset >= items.length) {
     // Return empty result if offset is beyond array bounds
     return {
@@ -41,22 +46,22 @@ export function paginateArray<T>(
       totalCount: items.length
     };
   }
-  
+
   // Calculate slice boundaries
   const endIndex = Math.min(offset + pageSize, items.length);
   const slice = items.slice(offset, endIndex);
   const hasMore = endIndex < items.length;
-  
+
   const result: PaginatedResponse<T> = {
     items: slice,
     hasMore,
     totalCount: items.length
   };
-  
+
   if (hasMore) {
     result.nextCursor = encodeCursor({ offset: endIndex });
   }
-  
+
   return result;
 }
 
@@ -71,25 +76,25 @@ export async function streamPaginate<T>(
 ): Promise<PaginatedResponse<T>> {
   const { pageSize, cursor } = options;
   const { offset = 0 } = decodeCursor(cursor);
-  
+
   // Validate offset
   if (offset < 0) {
     throw new Error("Invalid cursor: negative offset");
   }
-  
+
   // Fetch only the required page
   const result = await fetchFn(offset, pageSize);
   const hasMore = result.value.length === pageSize;
-  
+
   const response: PaginatedResponse<T> = {
     items: result.value,
     hasMore,
     totalCount: result.count
   };
-  
+
   if (hasMore) {
     response.nextCursor = encodeCursor({ offset: offset + pageSize });
   }
-  
+
   return response;
 }

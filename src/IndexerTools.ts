@@ -71,8 +71,8 @@ export function registerIndexerTools(server: any, context: ToolContext) {
   server.tool("listIndexers", "List indexer names.", {}, async () => {
     const client = getClient();
     return rf.executeWithTimeout(
-      client.listIndexers().then((indexers: any[]) => {
-        const names = indexers.map((ix: any) => ix.name);
+      client.listIndexers().then((indexers: unknown[]) => {
+        const names = (indexers as Array<{ name?: string }>).map(ix => ix.name || "").filter(Boolean);
         return { indexers: names, count: names.length };
       }),
       DEFAULT_TIMEOUT_MS,
@@ -81,12 +81,12 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     );
   });
 
-  server.tool("getIndexer", "Get an indexer.", { name: z.string() }, async ({ name }: any) => {
+  server.tool("getIndexer", "Get an indexer.", { name: z.string() }, async ({ name }: { name: string }) => {
     const client = getClient();
     return rf.executeWithTimeout(client.getIndexer(name), DEFAULT_TIMEOUT_MS, "getIndexer", { tool: "getIndexer", name });
   });
 
-  server.tool("runIndexer", "Run an indexer now.", { name: z.string() }, async ({ name }: any) => {
+  server.tool("runIndexer", "Run an indexer now.", { name: z.string() }, async ({ name }: { name: string }) => {
     try {
       const client = getClient();
       await rf.executeWithTimeout(client.runIndexer(name), DEFAULT_TIMEOUT_MS, "runIndexer", { tool: "runIndexer", name });
@@ -96,7 +96,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
     }
   });
 
-  server.tool("resetIndexer", "Reset change tracking for an indexer (full re-crawl).", { name: z.string() }, async ({ name }: any) => {
+  server.tool("resetIndexer", "Reset change tracking for an indexer (full re-crawl).", { name: z.string() }, async ({ name }: { name: string }) => {
     try {
       const client = getClient();
       await rf.executeWithTimeout(client.resetIndexer(name), DEFAULT_TIMEOUT_MS, "resetIndexer", { tool: "resetIndexer", name });
@@ -113,7 +113,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
       name: z.string(),
       historyLimit: z.number().int().positive().max(50).default(5).describe("Limit execution history entries"),
     },
-    async ({ name, historyLimit }: any) => {
+    async ({ name, historyLimit }: { name: string; historyLimit: number }) => {
       const client = getClient();
       return rf.executeWithTimeout(
         client.getIndexerStatus(name).then((status: any) => {
@@ -136,22 +136,23 @@ export function registerIndexerTools(server: any, context: ToolContext) {
   );
 
   // NEW: Create or update a Blob indexer pointing to the given data source and index
+  const CreateOrUpdateBlobIndexerSchema = z.object({
+    name: z.string().optional().describe("Indexer name"),
+    dataSourceName: z.string().optional().describe("Existing data source connection name (e.g. from createOrUpdateBlobDataSource)"),
+    targetIndexName: z.string().optional().describe("Target search index name"),
+    scheduleInterval: z.string().optional().default("PT2H").describe("ISO-8601 duration (e.g., PT2H)"),
+    runNow: z.boolean().optional().default(false),
+    parsingMode: z.enum(["default", "jsonArray", "delimitedText", "lineSeparated"]).optional().default("default"),
+    indexedFileNameExtensions: z.string().optional().default(".md,.ts,.js,.json,.yml,.yaml,.txt"),
+    excludedFileNameExtensions: z.string().optional().default(".png,.jpg,.gif,.svg,.ico"),
+    dataToExtract: z.enum(["contentOnly", "contentAndMetadata", "storageMetadata"]).optional().default("contentAndMetadata"),
+    indexStorageMetadataOnlyForOversizedDocuments: z.boolean().optional().default(true),
+  });
+
   server.tool(
     "createOrUpdateBlobIndexer",
     "Create or update an indexer for Azure Blob data source to a target index. Optionally run immediately.",
-    {
-      name: z.string().describe("Indexer name"),
-      dataSourceName: z.string().describe("Existing data source connection name (e.g. from createOrUpdateBlobDataSource)"),
-      targetIndexName: z.string().describe("Target search index name"),
-      scheduleInterval: z.string().optional().default("PT2H").describe("ISO-8601 duration (e.g., PT2H)"),
-      runNow: z.boolean().optional().default(false),
-      // Basic knobs for file parsing; defaults mirror your shell script
-      parsingMode: z.enum(["default", "jsonArray", "delimitedText", "lineSeparated"]).optional().default("default"),
-      indexedFileNameExtensions: z.string().optional().default(".md,.ts,.js,.json,.yml,.yaml,.txt"),
-      excludedFileNameExtensions: z.string().optional().default(".png,.jpg,.gif,.svg,.ico"),
-      dataToExtract: z.enum(["contentOnly", "contentAndMetadata", "storageMetadata"]).optional().default("contentAndMetadata"),
-      indexStorageMetadataOnlyForOversizedDocuments: z.boolean().optional().default(true),
-    },
+    CreateOrUpdateBlobIndexerSchema,
     async ({
       name,
       dataSourceName,
@@ -163,7 +164,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
       excludedFileNameExtensions,
       dataToExtract,
       indexStorageMetadataOnlyForOversizedDocuments,
-    }: any) => {
+    }: z.infer<typeof CreateOrUpdateBlobIndexerSchema>) => {
       try {
         const client = getClient();
 
@@ -298,16 +299,17 @@ export function registerIndexerTools(server: any, context: ToolContext) {
       pollSeconds: z.number().int().positive().max(30).default(5),
       maxAttempts: z.number().int().positive().max(600).default(60),
     },
-    async ({ indexerName, clientRequestId, pollSeconds, maxAttempts }: any) => {
+    async ({ indexerName, clientRequestId, pollSeconds, maxAttempts }: { indexerName: string; clientRequestId?: string; pollSeconds?: number; maxAttempts?: number }) => {
       try {
         const c = getClient();
         await c.runIndexer(indexerName);
 
         let done = false,
           attempts = 0;
-        while (!done && attempts++ < maxAttempts) {
+        const max = maxAttempts ?? 60;
+        while (!done && attempts++ < max) {
           await new Promise((r) => setTimeout(r, (pollSeconds ?? 5) * 1000));
-          const s = await c.getIndexerStatus(indexerName);
+          const s: any = await c.getIndexerStatus(indexerName);
           const lr = s?.lastResult;
           const status = lr?.status ?? "unknown";
           const itemsProcessed = lr?.itemsProcessed ?? lr?.itemCount ?? 0;
@@ -323,7 +325,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
                   : 0.1;
           done = status === "success" || status === "transientFailure";
         }
-        const finalStatus = await c.getIndexerStatus(indexerName);
+        const finalStatus: any = await c.getIndexerStatus(indexerName);
         return rf.formatSuccess({
           indexerName,
           status: finalStatus?.lastResult?.status ?? "unknown",
