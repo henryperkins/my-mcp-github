@@ -1,6 +1,8 @@
 # Azure Search MCP Server - Comprehensive Alignment Implementation Plan
 
-This document merges the analysis from `MCP_SPECIFICATION_ALIGNMENT.md`, `SRC_INDEX_MCP_ALIGNMENT_REVIEW.md`, and `AzureSearch-MCP-Alignment-Recommendations.md` into a unified implementation plan for aligning the Azure Search MCP server with the latest MCP specification (2025-06-18) and Azure Search API (2025-08-01-preview).
+This document merges the analysis from `MCP_SPECIFICATION_ALIGNMENT.md`, `SRC_INDEX_MCP_ALIGNMENT_REVIEW.md`, and `AzureSearch-MCP-Alignment-Recommendations.md` into a unified implementation plan for aligning **the _current_ modular Azure Search MCP server** with the latest MCP specification (2025-06-18) and Azure Search REST API (2025-08-01-preview).
+
+👉 **Why an update?**  Since the original plan was written the code-base was refactored from a single monolithic `src/index.ts` file into a _collection of focused tool-registration modules_.  All tool definitions now live in purpose-built files (`IndexTools.ts`, `DocumentTools.ts`, `DataTools.ts`, `IndexerTools.ts`, `SkillTools.ts`, `SynonymTools.ts`), are wired up from the lightweight entry point in `src/index.ts`, and share common helpers under `src/utils/*`.  The original plan referenced line numbers and helper methods that no longer exist or live elsewhere.  This revision keeps the same high-level goals but maps the work to the **new architecture** so implementation tasks are immediately actionable.
 
 ## Executive Summary
 
@@ -20,18 +22,18 @@ The current Azure Search MCP server provides comprehensive functionality for ind
 ### ✅ Already Implemented
 - **Core Functionality**: Complete CRUD operations for indexes, documents, indexers, skillsets, and synonyms
 - **Safety Features**: Destructive operations clearly marked with "⚠️ DESTRUCTIVE" warnings
-- **Response Management**: Large response handling with truncation and optional Azure OpenAI summarization via [`formatResponse()`](src/index.ts:29)
-- **Search Operations**: Full document search with filtering, sorting, and pagination support via [`searchDocuments`](src/index.ts:272)
-- **Status Monitoring**: Indexer status tracking and execution history via [`getIndexerStatus`](src/index.ts:561)
+- **Response Management**: Large response handling with truncation and optional Azure OpenAI summarization via [`formatResponse()`](src/utils/response.ts)
+- **Search Operations**: Full document search with filtering, sorting, and pagination support via [`searchDocuments`](src/DocumentTools.ts)
+- **Status Monitoring**: Indexer status tracking and execution history via [`getIndexerStatus`](src/IndexerTools.ts)
 
 ### ❌ Missing MCP Compliance Features
-- **Resource Management**: No `server.resource()` implementations in [`AzureSearchMCP.init()`](src/index.ts:158)
-- **Structured Errors**: Plain text error responses via [`formatError()`](src/index.ts:125) without MCP error codes
-- **Tool Hints**: No `readOnlyHint`, `destructiveHint`, or `idempotentHint` flags in tool definitions
-- **Progress Notifications**: [`runIndexer`](src/index.ts:531) returns immediately without progress tracking
-- **Output Schemas**: No Zod schema validation for tool outputs
-- **Cursor Pagination**: No MCP-style cursor-based pagination for list operations
-- **Request Context**: No `x-ms-client-request-id` threading in [`AzureSearchClient`](src/azure-search-client.ts:12)
+- **Resource Management**: No `server.resource()` registrations – _none_ of the modular tool files expose resources.
+- **Structured Errors**: `utils/response.ts` only exposes `formatError()` and `insights.normalizeError()` – neither maps to MCP error codes.
+- **Tool Hints**: No `readOnlyHint`, `destructiveHint`, or `idempotentHint` flags are passed in any `server.tool` declarations across the tool modules.
+- **Progress Notifications**: The `runIndexer` logic in `IndexerTools.ts` fires-and-forgets – no incremental `notification("progress")` events.
+- **Output Schemas**: Input validation uses Zod but **no output schemas** are supplied to `server.tool`.
+- **Cursor Pagination**: Client-side pagination helpers exist but are not exposed through MCP-style cursors.
+- **Request Context**: `AzureSearchClient` does not currently pass `x-ms-client-request-id` or expose ETag handling.
 - **Preview Features**: Missing Knowledge Agents and Knowledge Sources endpoints
 
 ## Implementation Strategy
@@ -40,34 +42,55 @@ The current Azure Search MCP server provides comprehensive functionality for ind
 
 #### 1.1 Tool Hints Implementation
 **Goal**: Add behavioral hints to help LLMs understand tool impact
-**Files**: [`src/index.ts`](src/index.ts)
+**Files**: [`src/utils/toolHints.ts`](new), _plus_ every `*.Tools.ts` module where `server.tool` is called.
 
 ```typescript
 // Add hints helper
-function getToolHints(method: "GET" | "PUT" | "POST" | "DELETE") {
+// utils/toolHints.ts – shared helper
+export function getToolHints(method: "GET" | "PUT" | "POST" | "DELETE") {
   return {
     readOnlyHint: method === "GET",
     destructiveHint: method === "DELETE",
     idempotentHint: method === "GET" || method === "PUT" || method === "DELETE"
-  };
+  } as const;
 }
 
-// Apply to tool definitions
-this.server.tool(
+// Example – inside `IndexTools.ts`
+
+server.tool(
   "deleteIndex",
-  "⚠️ DESTRUCTIVE: Permanently delete an index and all its documents. This action cannot be undone. Please confirm carefully before proceeding.",
+  "⚠️ DESTRUCTIVE: Permanently delete an index and all its documents. This action cannot be undone.",
   { indexName: z.string() },
   async ({ indexName }) => { /* ... */ },
-  getToolHints("DELETE")
+ getToolHints("DELETE")
 );
+
+#### 1.4 Protocol Discovery & Lists
+**Goal**: Expose mandatory discovery endpoints so clients can enumerate capabilities without hard-coding paths.
+**Files**: [`src/index.ts`](src/index.ts)
+
+```typescript
+// Root discovery (rpc.discover) already handled by McpServer internals, but we must
+// supplement with dynamic lists so UI clients can build menus.
+
+server.capabilities.tools = { listChanged: true };
+server.capabilities.prompts = { listChanged: true };
+
+// When tool set changes (e.g., after env-based feature flags) emit notification
+server.notification("tools/listChanged", {});
+
+// Prompts list is provided automatically but we register a handler so we can
+// inject pagination later if needed.
+```
 ```
 
 #### 1.2 Enhanced Error Handling
 **Goal**: Implement structured MCP error responses with proper error codes
-**Files**: [`src/index.ts`](src/index.ts)
+**Files**: [`src/insights.ts`](src/insights.ts), [`src/utils/response.ts`](src/utils/response.ts), [`src/utils/errors.ts`](new)
 
 ```typescript
-private formatMcpError(error: any, requestId?: string) {
+// utils/errors.ts – shared across tools
+export function formatMcpError(error: any, requestId?: string) {
   const errorMessage = error instanceof Error ? error.message : String(error);
   const status = error?.status || error?.response?.status;
   
@@ -101,7 +124,7 @@ private formatMcpError(error: any, requestId?: string) {
 
 #### 1.3 Output Schemas
 **Goal**: Add Zod schemas for tool outputs to provide type safety and validation
-**Files**: [`src/index.ts`](src/index.ts)
+**Files**: All `*.Tools.ts` modules and new shared schema folder `src/schemas/*` (to avoid duplication).
 
 ```typescript
 // Define output schemas
@@ -133,7 +156,7 @@ this.server.tool(
 
 #### 2.1 Resource Management
 **Goal**: Expose Azure Search entities as browsable MCP resources
-**Files**: [`src/index.ts`](src/index.ts)
+**Files**: [`src/resources.ts`](new), [`src/index.ts`](src/index.ts)
 
 ```typescript
 // Update server capabilities in constructor
@@ -181,6 +204,31 @@ this.server.resource(
   }
 );
 
+// ---------------- RESOURCE LIST & READ ----------------
+// Required by ResourcesOverviewMCP2025.md – provides opaque-cursor pagination
+
+this.server.method("resources/list", async ({ cursor }) => {
+  // cursor is opaque – encode/decode with base64 JSON { offset }
+  const { offset } = cursor ? JSON.parse(Buffer.from(cursor, "base64").toString()) : { offset: 0 };
+  const pageSize = 50;
+  const all = await listAllResources(); // helper enumerates resource registry
+  const nextOffset = offset + pageSize < all.length ? offset + pageSize : null;
+  return {
+    resources: all.slice(offset, offset + pageSize),
+    ...(nextOffset !== null && { nextCursor: Buffer.from(JSON.stringify({ offset: nextOffset })).toString("base64") })
+  };
+});
+
+this.server.method("resources/read", async ({ uri }) => {
+  const res = await getResourceByUri(uri); // helper
+  return { contents: res.contents };
+});
+
+// Emit listChanged when registry updated
+watchResourceRegistry((change) => {
+  this.server.notification("resources/listChanged", change);
+});
+
 this.server.resource(
   "servicestats",
   "Service-level statistics and quotas",
@@ -202,7 +250,7 @@ this.server.resource(
 
 #### 2.2 Progress Notifications
 **Goal**: Provide real-time progress updates for long-running operations
-**Files**: [`src/index.ts`](src/index.ts)
+**Files**: [`src/IndexerTools.ts`](src/IndexerTools.ts), [`src/utils/progress.ts`](new)
 
 ```typescript
 this.server.tool(
@@ -285,49 +333,87 @@ private calculateIndexerProgress(lastResult: any): number {
 
 #### 2.3 Pagination Protocol
 **Goal**: Implement MCP-style cursor-based pagination for list operations
-**Files**: [`src/index.ts`](src/index.ts)
+**Files**: [`src/IndexTools.ts`](src/IndexTools.ts), [`src/DocumentTools.ts`](src/DocumentTools.ts), [`src/utils/pagination.ts`](new)
 
 ```typescript
 this.server.tool(
   "listIndexesPaginated",
   "List search indexes with cursor-based pagination.",
   {
-    cursor: z.string().optional().describe("Pagination cursor (offset)"),
-    limit: z.number().int().positive().max(200).default(50).describe("Maximum items per page"),
-    includeStats: z.boolean().optional().describe("Include document count and storage size"),
-    verbose: z.boolean().optional().describe("Include full index definitions")
+    cursor: z.string().optional().describe("Opaque pagination cursor"),
+    pageSize: z.number().int().positive().max(200).default(50).describe("Requested page size (server may override)")
   },
-  async ({ cursor, limit, includeStats, verbose }) => {
+  async ({ cursor, pageSize }) => {
     try {
+      const { offset } = cursor ? JSON.parse(Buffer.from(cursor, "base64").toString()) : { offset: 0 };
       const client = this.getClient();
-      const offset = cursor ? parseInt(cursor, 10) : 0;
-      
-      // Get all indexes (the service doesn't support server-side pagination)
-      const allIndexes = await client.listIndexes({ includeStats, verbose });
-      const indexes = allIndexes.value || allIndexes;
-      
-      // Apply client-side pagination
-      const slice = indexes.slice(offset, offset + limit);
-      const nextCursor = offset + limit < indexes.length ? String(offset + limit) : null;
-      
-      const response = {
+      const allIndexes = await client.listIndexes();
+      const slice = allIndexes.slice(offset, offset + pageSize);
+
+      const nextOffset = offset + pageSize < allIndexes.length ? offset + pageSize : null;
+      return await this.formatResponse({
         indexes: slice,
-        pagination: {
-          cursor: cursor || "0",
-          nextCursor,
-          hasMore: !!nextCursor,
-          total: indexes.length,
-          limit
-        }
-      };
-      
-      return await this.formatResponse(response);
+        ...(nextOffset !== null && {
+          nextCursor: Buffer.from(JSON.stringify({ offset: nextOffset })).toString("base64")
+        })
+      });
     } catch (error) {
       return this.formatMcpError(error);
     }
   },
-  getToolHints("GET")
+getToolHints("GET")
 );
+
+#### 2.4 Sampling Protocol
+**Goal**: Support MCP sampling for deterministic re-execution and debugging flows (see MCP_SamplingProtocolOverview.md)
+**Files**: [`src/utils/sampling.ts`](new), [`src/index.ts`](src/index.ts)
+
+```typescript
+// utils/sampling.ts – helper storage abstraction (KV / D1 / R2)
+export async function recordSampling(id: string, payload: any) {
+  await MY_KV.put(`sampling:${id}`, JSON.stringify(payload));
+}
+
+export async function getSampling(id: string) {
+  const raw = await MY_KV.get(`sampling:${id}`);
+  return raw ? JSON.parse(raw) : null;
+}
+
+// Register protocol methods
+server.method("sampling/record", async ({ id, request, response }) => {
+  await recordSampling(id, { request, response });
+  return { ok: true };
+});
+
+server.method("sampling/playback", async ({ id }) => {
+  const data = await getSampling(id);
+  if (!data) throw new Error("sampling_not_found");
+  return data;
+});
+```
+
+#### 2.5 Enhanced Logging
+**Goal**: Emit `logging/event` notifications and allow runtime log-level changes (MCPLoggingProtocol20250618.md)
+**Files**: [`src/utils/logging.ts`](new), [`src/index.ts`](src/index.ts)
+
+```typescript
+// utils/logging.ts – simple Pub/Sub
+let currentLevel: "debug" | "info" | "warning" | "error" = "info";
+const subscribers: ((e: any) => void)[] = [];
+
+export function setLogLevel(l: typeof currentLevel) { currentLevel = l; }
+export function onLog(cb: (e:any)=>void) { subscribers.push(cb); }
+export function log(lvl: typeof currentLevel, msg: string, extras?: any) {
+  if (lvl === "error" || lvl === currentLevel) {
+    const entry = { timestamp: Date.now(), level: lvl, msg, ...extras };
+    subscribers.forEach(s => s(entry));
+  }
+}
+
+// Register with MCP server
+server.method("logging/setLevel", ({ level }) => { setLogLevel(level); return { ok: true }; });
+onLog(entry => server.notification("logging/event", entry));
+```
 ```
 
 ### Phase 3: Azure Search Preview Features (Low Priority)
@@ -476,30 +562,6 @@ private async request(path: string, options: RequestInit & { headers?: Record<st
 **Implementation**: Add `clientRequestId` parameter to all mutating operations
 
 ## Implementation Timeline
-
-### Week 1-2: Foundation (Phase 1)
-- [ ] Implement tool hints for all existing tools
-- [ ] Add structured error handling with MCP error codes
-- [ ] Create and apply output schemas for key tools
-- [ ] Update server capabilities declaration
-
-### Week 3-4: Advanced Features (Phase 2)  
-- [ ] Implement resource management for indexes and service stats
-- [ ] Add progress notifications for indexer operations
-- [ ] Implement cursor-based pagination for list operations
-- [ ] Add request context threading
-
-### Week 5-6: Preview Features (Phase 3)
-- [ ] Extend client for Knowledge Agents endpoints
-- [ ] Add Knowledge Agents CRUD tools and resources
-- [ ] Implement Knowledge Sources support
-- [ ] Add service-level analytics resources
-
-### Week 7: Integration & Testing (Phase 4)
-- [ ] Add ETag support for safe concurrency
-- [ ] Implement comprehensive error mapping
-- [ ] Performance testing and optimization
-- [ ] Documentation updates
 
 ## Testing Strategy
 
@@ -720,6 +782,8 @@ private async handleResponseWithRetry(response: Response, retries: number = 3): 
 - [ ] Create comprehensive Zod schemas for all Azure Search entities
 - [ ] Add missing client methods (analyze, suggest, autocomplete, service stats)
 - [ ] Update server capabilities declaration
+ - [ ] Expose discovery endpoints: `tools/list`, `prompts/list`
+ - [ ] Adopt official pagination shape with `nextCursor`
 
 ### Week 3-4: Advanced Features (Phase 2) - UPDATED
 - [ ] Implement resource management for indexes, agents, and service stats
@@ -727,6 +791,9 @@ private async handleResponseWithRetry(response: Response, retries: number = 3): 
 - [ ] Implement cursor-based pagination for all list operations
 - [ ] Add request context threading and correlation IDs
 - [ ] Implement service health monitoring tools
+ - [ ] Implement `resources/list`, `resources/read`, and `resources/listChanged` notifications
+ - [ ] Integrate sampling protocol (`sampling/record`, `sampling/playback`, `samplingHint`)
+ - [ ] Emit `logging/event` notifications and `logging/setLevel` handler
 
 ### Week 5-6: Preview Features (Phase 3) - ENHANCED
 - [ ] Extend client for Knowledge Agents and Knowledge Sources endpoints
@@ -734,6 +801,7 @@ private async handleResponseWithRetry(response: Response, retries: number = 3): 
 - [ ] Implement analyzer testing and suggestion tools
 - [ ] Add comprehensive monitoring and observability features
 - [ ] Implement security enhancements (rate limiting, validation)
+ - [ ] Alias CRUD, indexer reset docs/resync verbs, skillset reset skills
 
 ### Week 7: Integration & Testing (Phase 4) - ENHANCED
 - [ ] Add ETag support for safe concurrency across all operations
@@ -741,16 +809,20 @@ private async handleResponseWithRetry(response: Response, retries: number = 3): 
 - [ ] Performance testing with load testing and monitoring
 - [ ] Security testing and penetration testing
 - [ ] Documentation updates with API reference and examples
+ - [ ] Compliance audit against all Official MCP docs
 
 ## Key Implementation Files - UPDATED
 
 | File | Purpose | Changes Required |
 |------|---------|------------------|
-| [`src/index.ts`](src/index.ts) | Main MCP server implementation | Add tool hints, resources, progress notifications, pagination, health monitoring |
+| [`src/index.ts`](src/index.ts) | Entry point – wires tool modules & server | Update server capabilities + register new Resources module |
+| `src/*Tools.ts` | All individual tool registration modules | Inject `getToolHints()` helper, output schemas, progress notifications |
 | [`src/azure-search-client.ts`](src/azure-search-client.ts) | Azure Search REST client | Add ETag support, request headers, Knowledge Agents/Sources, retry logic, all missing endpoints |
-| [`src/schemas.ts`](src/schemas.ts) | **NEW** - Zod schema definitions | Complete schema definitions for all Azure Search entities |
+| `src/schemas/*` | **NEW** - Zod schema definitions | Complete schema definitions for all Azure Search entities |
 | [`src/monitoring.ts`](src/monitoring.ts) | **NEW** - Health and monitoring utilities | Service health checks, metrics collection, logging |
-| [`src/errors.ts`](src/errors.ts) | **NEW** - Error handling utilities | Custom error classes, retry logic, error mapping |
+| [`src/utils/errors.ts`](src/utils/errors.ts) | **NEW** - Error handling utilities | Custom error classes, retry logic, error mapping |
+| [`src/utils/sampling.ts`](src/utils/sampling.ts) | **NEW** - Sampling protocol helpers | Record & playback sample interactions |
+| [`src/utils/logging.ts`](src/utils/logging.ts) | **NEW** - Central logging hub | Emit `logging/event`, dynamic log levels |
 | [`package.json`](package.json) | Dependencies | Add monitoring libraries, enhanced error handling utilities |
 
 ## Conclusion
