@@ -45,10 +45,16 @@ export class AzureSearchClient {
       if (!exists) mergedHeaders[k] = v;
     };
 
-    // 1) Copy any existing headers from options (may include output from this.headers()).
+    // 1) Copy any existing headers from options (object or Headers instance).
     if (options.headers) {
-      for (const [k, v] of Object.entries(options.headers as Record<string, string>)) {
-        if (v !== undefined && v !== null) addHeader(k, String(v));
+      if (options.headers instanceof Headers) {
+        for (const [k, v] of options.headers.entries()) {
+          if (v !== undefined && v !== null) addHeader(k, String(v));
+        }
+      } else {
+        for (const [k, v] of Object.entries(options.headers as Record<string, string>)) {
+          if (v !== undefined && v !== null) addHeader(k, String(v));
+        }
       }
     }
 
@@ -58,16 +64,33 @@ export class AzureSearchClient {
 
     const headers: HeadersInit = mergedHeaders;
     
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    // Basic retry-with-backoff for 429/503
+    const maxRetries = 3;
+    let attempt = 0;
+    let response: Response;
 
-    if (!response.ok) {
-      const errorText = await response.text();
+    while (true) {
+      response = await fetch(url, {
+        ...options,
+        headers,
+      });
+
+      if (response.ok || (attempt >= maxRetries) || (response.status !== 429 && response.status !== 503)) {
+        break;
+      }
+
+      // Retry-after header in seconds or milliseconds
+      const ra = response.headers.get("Retry-After") || response.headers.get("retry-after-ms");
+      const delayMs = ra ? (/ms$/i.test(ra) ? parseInt(ra, 10) : parseInt(ra, 10) * 1000) : (500 * Math.pow(2, attempt));
+      await new Promise(r => setTimeout(r, isFinite(delayMs) ? delayMs : 1000));
+      attempt += 1;
+    }
+
+    if (!response!.ok) {
+      const errorText = await response!.text();
       // Fix #10: Preserve status code in error for better error handling
-      const error: any = new Error(`Azure Search API error (${response.status}): ${errorText}`);
-      error.statusCode = response.status;
+      const error: any = new Error(`Azure Search API error (${response!.status}): ${errorText}`);
+      error.statusCode = response!.status;
       error.response = errorText;
       throw error;
     }

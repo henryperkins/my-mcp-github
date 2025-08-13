@@ -30,6 +30,6 @@ export function registerSkillTools(server: any, context: ToolContext) {
   });
 
   server.tool("getSkillset", "Get a skillset.", { name: z.string() }, async ({ name }: { name: string }) => {
-    return rf.executeWithTimeout(getClient().getSkillset(name), DEFAULT_TIMEOUT_MS, "getSkillset", { tool: "getSkillset", name });
+    return rf.executeWithTimeout(() => getClient().getSkillset(name), DEFAULT_TIMEOUT_MS, "getSkillset", { tool: "getSkillset", name });
   });
 }

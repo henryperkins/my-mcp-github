@@ -67,6 +67,8 @@ export const SearchParamsSchema = z.object({
   filter: z.string().optional()
     .refine((val) => !val || !val.includes(";"), "Filter cannot contain semicolons for security"),
   orderBy: z.string().optional(),
+  // Accept lowercase 'orderby' alias for convenience
+  orderby: z.string().optional(),
   includeTotalCount: z.boolean().default(true)
 });
 

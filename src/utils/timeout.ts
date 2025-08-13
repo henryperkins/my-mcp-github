@@ -55,7 +55,7 @@ export function createTimeoutWrapper(timeoutMs: number = DEFAULT_TIMEOUT_MS) {
     
     descriptor.value = async function(...args: any[]) {
       return withTimeout(
-        originalMethod.apply(this, args),
+        () => originalMethod.apply(this, args),
         timeoutMs,
         propertyKey
       );

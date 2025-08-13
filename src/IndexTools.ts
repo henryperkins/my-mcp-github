@@ -30,9 +30,24 @@ function validateIndexDefinition(def: any): string[] {
   } else if (keyFields.length > 1) {
     errors.push("Index can only have one key field");
   } else {
-    // Fix #9: Validate key field properties
     const keyField = keyFields[0];
-    // Key field should remain retrievable
+
+    // Enforce Edm.String type and fixed capability flags
+    if (keyField.type !== "Edm.String") {
+      errors.push(`Key field ${keyField.name} must be type Edm.String`);
+    }
+    if (keyField.searchable !== false) {
+      errors.push(`Key field ${keyField.name} must have searchable=false`);
+    }
+    if (keyField.filterable !== true) {
+      errors.push(`Key field ${keyField.name} must have filterable=true`);
+    }
+    if (keyField.sortable !== false) {
+      errors.push(`Key field ${keyField.name} must have sortable=false`);
+    }
+    if (keyField.facetable !== false && keyField.facetable !== undefined) {
+      errors.push(`Key field ${keyField.name} must have facetable=false`);
+    }
     if (keyField.retrievable === false) {
       errors.push(`Key field ${keyField.name} must be retrievable`);
     }
@@ -59,6 +74,14 @@ function validateIndexDefinition(def: any): string[] {
       if (!f.dimensions || f.dimensions < 1) {
         errors.push(`Vector field ${f.name} must have dimensions > 0`);
       }
+      if (!f.vectorSearchProfile) {
+        errors.push(`Vector field ${f.name} must specify vectorSearchProfile`);
+      }
+    }
+
+    // Collection fields can never be filterable
+    if (String(f.type).startsWith("Collection(") && f.filterable) {
+      errors.push(`Collection field ${f.name} cannot be filterable`);
     }
   }
   return errors;

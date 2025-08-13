@@ -89,7 +89,16 @@ export class IndexBuilder {
   }
   
   // Field builders with validation
-  addKeyField(name: string, type: 'Edm.String' | 'Edm.Int32' | 'Edm.Int64' = 'Edm.String'): this {
+  /**
+   * Add the required key field.
+   * NOTE: Azure AI Search only allows Edm.String keys. Any other type will be rejected by the
+   * service, so we enforce the rule here early.
+   */
+  addKeyField(name: string, type: 'Edm.String' = 'Edm.String'): this {
+    if (type !== 'Edm.String') {
+      throw new Error('Azure AI Search requires the key field to be type Edm.String');
+    }
+
     // Check if key field already exists
     if (this.definition.fields.some(f => f.key)) {
       throw new Error('Index already has a key field');
@@ -99,10 +108,12 @@ export class IndexBuilder {
       name,
       type,
       key: true,
+      // Required key-field flags per Azure Search spec
       searchable: false,
       filterable: true,
       retrievable: true,
-      sortable: false
+      sortable: false,
+      facetable: false
     });
     return this;
   }
@@ -201,10 +212,10 @@ export class IndexBuilder {
       name,
       type,
       searchable: options.searchable ?? (itemType === 'String'),
-      // Filterable collections are only allowed for strings
-      filterable: options.filterable ?? (itemType === 'String'),
-      sortable: false, // Collections cannot be sortable
-      facetable: options.facetable ?? (itemType === 'String')
+      // Collection fields cannot be filterable or sortable per service spec
+      filterable: false,
+      sortable: false,
+      facetable: options.facetable ?? false
     });
     return this;
   }
@@ -331,7 +342,7 @@ export class IndexBuilder {
         if (!field.dimensions || field.dimensions < 1) {
           errors.push(`Vector field ${field.name} must have dimensions > 0`);
         }
-        if (!field.vectorSearchProfile && this.definition.vectorSearch) {
+        if (!field.vectorSearchProfile) {
           errors.push(`Vector field ${field.name} must have a vectorSearchProfile`);
         }
       }
@@ -340,13 +351,9 @@ export class IndexBuilder {
       if (field.type.startsWith('Collection(') && field.sortable) {
         errors.push(`Collection field ${field.name} cannot be sortable`);
       }
-      // Prevent non-string collection fields from being filterable
-      if (
-        field.type.startsWith('Collection(') &&
-        field.filterable &&
-        field.type !== 'Collection(Edm.String)'
-      ) {
-        errors.push(`Collection field ${field.name} can be filterable only for Collection(Edm.String)`);
+      // Collection fields are never filterable
+      if (field.type.startsWith('Collection(') && field.filterable) {
+        errors.push(`Collection field ${field.name} cannot be filterable`);
       }
     }
     

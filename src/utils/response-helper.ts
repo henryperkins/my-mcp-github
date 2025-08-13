@@ -18,10 +18,15 @@ export class ResponseFormatter {
    * Format a successful response
    */
   async formatSuccess(result: any, options?: Partial<ResponseFormatterOptions>): Promise<any> {
-    // Fix #12: Handle null summarizer properly - convert null to undefined
-    const summarizerResult = options?.summarizer ?? this.getSummarizer?.();
-    const summarizer = summarizerResult === null ? undefined : summarizerResult;
-    
+    // Handle explicit nulls → undefined so downstream always receives a function or undefined
+    const summarizerCandidate =
+      options?.summarizer !== undefined
+        ? options.summarizer
+        : this.getSummarizer?.();
+
+    const summarizer =
+      summarizerCandidate === null ? undefined : summarizerCandidate;
+
     return formatResponse(result, {
       summarizer,
       structuredContent: options?.structuredContent ?? result,
@@ -39,14 +44,19 @@ export class ResponseFormatter {
   /**
    * Execute an operation with timeout and format the response
    */
+  /**
+   * Wrap a potentially long-running operation with a timeout.
+   * Accepts either a thunk (() => Promise) *preferred* or an already-started Promise.
+   */
   async executeWithTimeout<T>(
-    operation: Promise<T>,
+    operation: Promise<T> | (() => Promise<T>),
     timeoutMs: number = DEFAULT_TIMEOUT_MS,
     operationName: string,
     errorContext: Record<string, any>,
   ): Promise<any> {
     try {
-      const result = await withTimeout(operation, timeoutMs, operationName);
+      const opFn = typeof operation === 'function' ? (operation as () => Promise<T>) : () => operation;
+      const result = await withTimeout(opFn, timeoutMs, operationName);
       return this.formatSuccess(result);
     } catch (error) {
       return this.formatError(error, { ...errorContext, operation: operationName });
@@ -65,7 +75,7 @@ export class ResponseFormatter {
       };
 
       try {
-        // Fix #7: Pass function to withTimeout, not already-running promise
+        // Ensure the operation starts *inside* the timeout window
         const result = await withTimeout(() => operation(params), timeoutMs, toolName);
         return this.formatSuccess(result);
       } catch (error) {
