@@ -68,6 +68,11 @@ npm run deploy
 - SSE: `https://azure-search-mcp.<your-subdomain>.workers.dev/sse`
 - HTTP: `https://azure-search-mcp.<your-subdomain>.workers.dev/mcp`
 
+## Documentation
+
+- Elicitation + MCP lessons learned: `docs/elicitation-and-mcp-lessons.md`
+- Elicitation client guide: `docs/elicitation-client-guide.md`
+
 ## Client Configuration
 
 ### Claude Desktop
@@ -98,6 +103,10 @@ claude mcp add --transport sse azure-search https://your-worker.workers.dev/sse
 # Or use directly
 claude -p "Search for AI documents" \
   --mcp-server azure-search=https://your-worker.workers.dev/sse
+
+# Local development
+claude mcp add --transport sse azure-search http://localhost:8788/sse
+claude mcp add --transport http azure-search http://localhost:8788/mcp
 ```
 
 ### MCP Inspector (Testing)
@@ -113,6 +122,7 @@ npx @modelcontextprotocol/inspector@latest
 - `listIndexes` - List all search indexes with metadata
   - Optional `includeStats`: Add document count and storage size
   - Optional `verbose`: Return full index definitions
+  - Optimized: Uses aggregate `/indexstats` with a timeout; falls back to per-index stats with small concurrency
 - `getIndex` - Get full index definition and schema
 - `getIndexStats` - View document count and storage usage
 - `createIndex` - Create a new search index
@@ -149,6 +159,9 @@ npx @modelcontextprotocol/inspector@latest
 - `getDataSource` - Get connection details
 - `listSkillsets` - List AI enrichment skillsets
 - `getSkillset` - Get skillset configuration
+
+### Debug / Diagnostics
+- `debugElicitation` - Check elicitation capability at runtime and optionally trigger a test (`performTest: true`)
 
 ## Usage Examples
 

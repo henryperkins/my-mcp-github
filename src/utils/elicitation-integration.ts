@@ -7,6 +7,11 @@ import {
   processElicitationResponse
 } from "../tool-elicitation";
 import { log } from "./logging";
+import { withTimeout } from "./timeout";
+import { DEFAULT_TIMEOUT_MS } from "../constants";
+
+// Dedicated timeout for elicitation requests to avoid hanging tools
+const ELICITATION_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
 
 /**
  * Helper to perform MCP elicitation if the server supports it
@@ -20,31 +25,50 @@ export async function elicitIfNeeded(
   request: ElicitationRequest
 ): Promise<Record<string, any> | undefined> {
   // Check for the elicitInput method (available in Cloudflare Agents SDK)
-  const elicitMethod = 
+  // According to Cloudflare docs, it should be available as this.elicitInput on McpAgent
+  const elicitMethod =
     serverContext?.elicitInput ||
     serverContext?.server?.elicitInput ||
     serverContext?.agent?.elicitInput;
+  const owner = serverContext?.elicitInput
+    ? serverContext
+    : serverContext?.server?.elicitInput
+    ? serverContext?.server
+    : serverContext?.agent?.elicitInput
+    ? serverContext?.agent
+    : undefined;
     
-  if (!elicitMethod) {
-    log("debug", "Server does not support elicitation (no elicitInput method found)");
+  if (!elicitMethod || !owner) {
+    log("debug", "Server does not support elicitation (no elicitInput method found)", {
+      hasDirectElicit: !!serverContext?.elicitInput,
+      hasServerElicit: !!serverContext?.server?.elicitInput,
+      hasAgentElicit: !!serverContext?.agent?.elicitInput,
+      contextType: serverContext?.constructor?.name
+    });
     return undefined;
   }
 
   try {
     // Use the Cloudflare Agents SDK elicitInput method
     // It automatically handles the MCP protocol communication
-    const response = await elicitMethod.call(
-      serverContext?.server || serverContext?.agent || serverContext,
-      {
+    log("debug", "Attempting elicitation via elicitInput", {
+      ownerType: owner?.constructor?.name,
+      hasBound: !!(elicitMethod as any).bind,
+    });
+    const response = await withTimeout(
+      () => (elicitMethod as any).call(owner, {
         message: request.message,
-        requestedSchema: request.requestedSchema
-      }
+        requestedSchema: request.requestedSchema,
+      }),
+      ELICITATION_TIMEOUT_MS,
+      "elicitInput"
     );
 
     // The response should contain action and optional content
+    const responseData = response as any;
     const result: ElicitationResult = {
-      action: response?.action || "cancel",
-      content: response?.content
+      action: responseData?.action || "cancel",
+      content: responseData?.content
     };
 
     // Process and validate the response

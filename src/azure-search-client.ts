@@ -115,6 +115,16 @@ export class AzureSearchClient {
     return result.value || [];
   }
 
+  /**
+   * Lightweight index listing with OData $select to reduce payload size.
+   * Example: select = "name,fields,defaultScoringProfile,corsOptions,semantic,vectorSearch"
+   */
+  async listIndexesSelected(select: string): Promise<Array<{ name: string; [k: string]: any }>> {
+    const path = `/indexes?$select=${select}`;
+    const result = (await this.request(path)) as { value?: Array<Record<string, unknown>> };
+    return (result.value || []) as Array<{ name: string; [k: string]: any }>;
+  }
+
   async getIndex(indexName: string): Promise<IndexDefinition | unknown> {
     return this.request(`/indexes('${encodeURIComponent(indexName)}')`);
   }

@@ -1,4 +1,6 @@
 // src/resources.ts
+import { withTimeout } from "./utils/timeout";
+import { DEFAULT_TIMEOUT_MS } from "./constants";
 
 /**
  * MCP Resource annotations for better client integration
@@ -77,34 +79,95 @@ export function registerResources(server: any, getClient: () => any) {
     async () => {
       try {
         const c = getClient();
-        const indexes = await c.listIndexes();
-        
-        // Get stats for each index
-        const indexesWithStats = await Promise.all(
-          indexes.map(async (idx: any) => {
-            try {
-              const stats = await c.getIndexStats(idx.name);
-              return {
-                name: idx.name,
-                fields: idx.fields?.length || 0,
-                documentCount: stats?.documentCount || 0,
-                storageSize: stats?.storageSize || 0,
-                features: {
-                  semantic: !!idx.semantic,
-                  vectorSearch: !!idx.vectorSearch,
-                  suggesters: idx.suggesters?.length > 0,
-                  scoringProfiles: idx.scoringProfiles?.length > 0
-                }
-              };
-            } catch {
-              return {
-                name: idx.name,
-                fields: idx.fields?.length || 0,
-                error: "Could not retrieve stats"
-              };
-            }
-          })
+        // Use lightweight $select to reduce payload size
+        const indexes = await c.listIndexesSelected(
+          "name,fields,semantic,vectorSearch,suggesters,scoringProfiles"
         );
+
+        // Try aggregate stats endpoint first
+        let indexesWithStats: any[];
+        try {
+          const summary: any = await withTimeout(
+            c.getIndexStatsSummary(),
+            DEFAULT_TIMEOUT_MS,
+            "getIndexStatsSummary"
+          );
+          const byName = new Map<string, any>();
+          const items = Array.isArray(summary?.value) ? summary.value : [];
+          for (const s of items) {
+            if (s?.name) byName.set(s.name, s);
+          }
+
+          indexesWithStats = indexes.map((idx: any) => {
+            const s = byName.get(idx.name);
+            const base: any = {
+              name: idx.name,
+              fields: idx.fields?.length || 0,
+              features: {
+                semantic: !!idx.semantic,
+                vectorSearch: !!idx.vectorSearch,
+                suggesters: idx.suggesters?.length > 0,
+                scoringProfiles: idx.scoringProfiles?.length > 0,
+              },
+            };
+            if (s) {
+              base.documentCount = s.documentCount || 0;
+              base.storageSize = s.storageSize || 0;
+              if (typeof s.vectorIndexSize === "number") {
+                base.vectorIndexSize = s.vectorIndexSize;
+              }
+            }
+            return base;
+          });
+        } catch {
+          // Fallback: per-index stats with modest concurrency and timeouts
+          const concurrency = 5;
+          const out: any[] = [];
+          for (let i = 0; i < indexes.length; i += concurrency) {
+            const slice = indexes.slice(i, i + concurrency);
+            const chunk = await Promise.all(
+              slice.map(async (idx: any) => {
+                try {
+                  const stats: any = await withTimeout(
+                    c.getIndexStats(idx.name),
+                    DEFAULT_TIMEOUT_MS,
+                    `getIndexStats:${idx.name}`
+                  );
+                  const result: any = {
+                    name: idx.name,
+                    fields: idx.fields?.length || 0,
+                    documentCount: stats?.documentCount || 0,
+                    storageSize: stats?.storageSize || 0,
+                    features: {
+                      semantic: !!idx.semantic,
+                      vectorSearch: !!idx.vectorSearch,
+                      suggesters: idx.suggesters?.length > 0,
+                      scoringProfiles: idx.scoringProfiles?.length > 0,
+                    },
+                  };
+                  if (typeof stats?.vectorIndexSize === "number") {
+                    result.vectorIndexSize = stats.vectorIndexSize;
+                  }
+                  return result;
+                } catch {
+                  return {
+                    name: idx.name,
+                    fields: idx.fields?.length || 0,
+                    features: {
+                      semantic: !!idx.semantic,
+                      vectorSearch: !!idx.vectorSearch,
+                      suggesters: idx.suggesters?.length > 0,
+                      scoringProfiles: idx.scoringProfiles?.length > 0,
+                    },
+                    error: "Could not retrieve stats",
+                  };
+                }
+              })
+            );
+            out.push(...chunk);
+          }
+          indexesWithStats = out;
+        }
         
         return createResourceResponse(
           "indexes",

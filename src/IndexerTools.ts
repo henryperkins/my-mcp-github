@@ -1,6 +1,6 @@
 // src/IndexerTools.ts
 import { z } from "zod";
-import { ResponseFormatter } from "./utils/response-helper";
+import { ResponseFormatter } from "./utils/response";
 import getToolHints from "./utils/toolHints";
 import type { ToolContext } from "./types";
 import { DEFAULT_TIMEOUT_MS } from "./constants";
@@ -258,7 +258,7 @@ export function registerIndexerTools(server: any, context: ToolContext) {
         // Fix #6: Use custom field mappings if provided, otherwise minimal default
         // Clean up mappings to remove null values
         if (fieldMappings && fieldMappings.length > 0) {
-          indexerDefinition.fieldMappings = fieldMappings.map(fm => {
+          indexerDefinition.fieldMappings = fieldMappings.map((fm: any) => {
             const cleaned: any = {
               sourceFieldName: fm.sourceFieldName,
               targetFieldName: fm.targetFieldName,

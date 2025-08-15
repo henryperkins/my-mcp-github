@@ -1,6 +1,6 @@
 // src/SynonymTools.ts
 import { z } from "zod";
-import { ResponseFormatter } from "./utils/response-helper";
+import { ResponseFormatter } from "./utils/response";
 import type { ToolContext } from "./types";
 import { SynonymMapSchema } from "./schemas";
 import { DEFAULT_TIMEOUT_MS } from "./constants";

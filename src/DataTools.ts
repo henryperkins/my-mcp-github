@@ -1,6 +1,6 @@
 // src/DataTools.ts
 import { z } from "zod";
-import { ResponseFormatter } from "./utils/response-helper";
+import { ResponseFormatter } from "./utils/response";
 import { ElicitationRequest } from "./tool-elicitation";
 import { elicitIfNeeded, mergeElicitedParams, needsElicitation } from "./utils/elicitation-integration";
 import type { ToolContext } from "./types";

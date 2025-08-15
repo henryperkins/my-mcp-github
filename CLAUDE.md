@@ -8,18 +8,18 @@ This is an Azure AI Search MCP (Model Context Protocol) server deployed on Cloud
 
 ## Architecture
 
-- **Main Entry**: `src/index.ts` - Defines the `AzureSearchMCP` class extending `McpAgent` and exposes both `/sse` and `/mcp` endpoints
-- **REST Client**: `src/azure-search-client.ts` - Simple REST API client for Azure Search that works in Cloudflare Workers environment
+- **Main Entry**: `src/index.ts` - Defines the `AzureSearchMCP` class extending `McpAgent` and exposes `/sse` and `/mcp` endpoints
+- **REST Client**: `src/azure-search-client.ts` - REST API client for Azure Search (Workers-compatible)
 - **OpenAI Client**: `src/azure-openai-client.ts` - Azure OpenAI integration for intelligent summarization of large responses
-- **Error Handling**: `src/insights.ts` - Provides intelligent error normalization with actionable recommendations (currently unused in simplified version)
-- **Verification**: `src/verify.ts` - Helper utilities for verifying operations and polling indexer completion (currently unused in simplified version)
-- **No Authentication**: This server operates without OAuth, relying on Azure Search API keys for authentication
+- **Error Handling**: `src/insights.ts` - Used by response formatter for structured error insights and messaging
+- **Debug Tools**: `src/DebugTools.ts` - `debugElicitation` tool for verifying client elicitation support and timing
+- **No OAuth**: Uses Azure Search API keys (stored as Worker secrets) rather than OAuth
 
 ## Key Implementation Details
 
-- **REST API**: Uses native fetch() with Azure Search REST API instead of Azure SDK (SDK not compatible with Workers environment)
+- **REST API**: Uses native `fetch()` with Azure Search REST API instead of Azure SDK (SDK not compatible with Workers environment)
 - **Durable Objects**: Requires Durable Object binding for MCP Agent state management
-- **Response Format**: All tools return text content type with JSON stringified data
+- **Response Format**: Tools return JSON (as text content) with automatic summarization/truncation for large payloads
 - **API Versions**: 
   - Azure Search: 2025-08-01-preview
   - Azure OpenAI: 2024-08-01-preview
@@ -27,6 +27,12 @@ This is an Azure AI Search MCP (Model Context Protocol) server deployed on Cloud
   - **Pagination**: Large result sets are automatically paginated (max 50 items for search, configurable history limits)
   - **Summarization**: Responses >20KB are intelligently summarized using GPT-4o-mini
   - **Truncation**: Falls back to smart truncation if OpenAI is unavailable
+- **Performance Optimizations**:
+  - `listIndexes`: Uses `$select` to trim payloads and `/indexstats` aggregate endpoint for stats; falls back to per-index stats with small concurrency and timeouts
+- **Elicitation Support**:
+  - Server advertises `elicitation` capability and invokes `elicitInput` with proper binding
+  - All elicitation calls are wrapped with a timeout to prevent hangs when clients don’t respond
+  - `debugElicitation` tool can test support; some clients may not yet render elicitation UI
 
 ## Development Commands
 
@@ -88,6 +94,7 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 - `listIndexes` - List all indexes with metadata
   - Optional `includeStats`: Add document count and storage size
   - Optional `verbose`: Return full index definitions
+  - Implementation detail: when `includeStats` is true, the server uses `/indexstats` (aggregate) with timeout and a concurrency-limited fallback to avoid timeouts
 - `getIndex` - Fetch full index definition (fields, analyzers, etc.)
 - `getIndexStats` - Get document count and storage usage
 - `createIndex` - Create a new search index with enhanced features
@@ -133,15 +140,26 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 - `listSkillsets` - List skillset names
 - `getSkillset` - Get skillset configuration
 
+### Debug / Diagnostics
+- `debugElicitation` - Report elicitation capability detection and optionally trigger a test elicitation (`performTest: true`)
+
+## Elicitation Notes
+
+- The server supports elicitation and times out safely if a client doesn’t respond (to avoid hanging tools).
+- Some clients (e.g., current Claude Code CLI builds) may not yet render elicitation UI. In that case:
+  - Destructive tools should be called with explicit confirmation parameters (e.g., `{ "confirmation": "DELETE" }`).
+  - Missing-parameter tools will fall back to standard validation errors rather than hanging.
+  - Use `debugElicitation` to verify runtime support and round-trip behavior.
+
 ## Testing
 
-Connect to the MCP server using the Inspector:
+Connect to the MCP server using the Inspector (SSE):
 ```bash
 npx @modelcontextprotocol/inspector@latest
 # Enter: https://your-worker.workers.dev/sse
 ```
 
-Or use Claude Code:
+Or use Claude Code (SSE):
 ```bash
 claude mcp add --transport sse azure-search https://your-worker.workers.dev/sse
 ```
@@ -158,6 +176,15 @@ Or use Claude Desktop:
 }
 ```
 
+Local development (HTTP and SSE):
+```bash
+# Local SSE
+claude mcp add --transport sse azure-search http://localhost:8788/sse
+
+# Local HTTP (Streamable HTTP transport)
+claude mcp add --transport http azure-search http://localhost:8788/mcp
+```
+
 ## Dependencies
 
 - `@modelcontextprotocol/sdk`: MCP protocol SDK
@@ -168,10 +195,10 @@ Or use Claude Desktop:
 ## Important Notes
 
 - The Azure SDK (`@azure/search-documents`) is NOT used due to incompatibility with Cloudflare Workers
-- All Azure Search operations use the REST API directly via fetch()
-- Response format is simplified to text content type with JSON stringified data
-- Complex features like vector search and advanced create/update operations are not yet implemented in the simplified version
+- All Azure Search operations use the REST API directly via `fetch()`
 - Large responses (>20KB) are automatically handled via:
   - Intelligent summarization using Azure OpenAI (if configured)
   - Pagination for array results
   - Smart truncation as fallback
+- Advanced capabilities are implemented, including semantic and vector settings, index validation, and smart update/merge logic
+- `listIndexes` is optimized for performance with aggregate stats and fallbacks to reduce timeouts

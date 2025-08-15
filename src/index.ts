@@ -12,7 +12,9 @@ import { registerDataTools } from "./DataTools";
 import { registerIndexerTools } from "./IndexerTools";
 import { registerSkillTools } from "./SkillTools";
 import { registerSynonymTools } from "./SynonymTools";
+import { registerServiceUtilsTools } from "./ServiceUtilsTools";
 import { StringBuilder } from "./utils/string-builder";
+import { registerDebugTools } from "./DebugTools";
 
 // Type definitions for environment
 interface Env {
@@ -33,7 +35,8 @@ class AzureSearchMCP extends McpAgent {
       prompts: { listChanged: true },
       resources: { subscribe: true, listChanged: true },
       logging: {},
-      tools: { listChanged: true }
+      tools: { listChanged: true },
+      elicitation: {} // Advertise elicitation support
     }
   });
 
@@ -110,6 +113,8 @@ class AzureSearchMCP extends McpAgent {
     registerIndexerTools(this.server, toolContext);
     registerSkillTools(this.server, toolContext);
     registerSynonymTools(this.server, toolContext);
+    registerServiceUtilsTools(this.server, toolContext);
+    registerDebugTools(this.server, toolContext);
 
     // Resources
     registerResources(this.server, () => this.getClient());
@@ -120,7 +125,7 @@ class AzureSearchMCP extends McpAgent {
       "create_search_index",
       "Create a new search index with guided setup for your use case",
       {
-        use_case: z.string().describe("Type of search: ecommerce, documents, knowledge, or custom"),
+        use_case: z.string().describe("Type of search: ecommerce, documents, knowledge, hybrid, or custom"),
         index_name: z.string().describe("Name for the index (lowercase, hyphens allowed)"),
         language: z.string().optional().describe("Primary content language (e.g., english, spanish, french)")
       },
@@ -175,6 +180,19 @@ Call createIndex with template='documentSearch', indexName='${index_name}'${lang
 Call createIndex with template='knowledgeBase', indexName='${index_name}'${language ? `, language='${language}'` : ''}`;
             break;
 
+          case "hybrid":
+          case "hybrid-search":
+          case "vector":
+            instructions = `Create a hybrid search index with:
+1. Use the 'hybridSearch' template via createIndex tool
+2. Combines traditional keyword search with vector search
+3. Include fields for: content (text), content_vector (embeddings)
+4. Vector dimensions: specify based on your embedding model (default 1536 for OpenAI)
+5. ${language ? `Configure ${language} language analyzers for text fields` : 'Use standard analyzers'}
+
+Call createIndex with template='hybridSearch', indexName='${index_name}'${language ? `, language='${language}'` : ''}, vectorDimensions=1536 (or your model's dimensions)`;
+            break;
+
           case "custom":
             instructions = `For a custom index, I'll help you define the schema. Please provide:
 1. What types of data will you be searching?
@@ -191,7 +209,11 @@ Once you provide these details, I'll create the index using the createIndex tool
 2. What search capabilities do you need?
 3. Should I use a template or create a custom schema?
 
-Available templates: documentSearch, productCatalog, hybridSearch, knowledgeBase`;
+Available templates:
+- documentSearch: For articles, blogs, documents
+- productCatalog: For e-commerce products  
+- hybridSearch: For combined text and vector search
+- knowledgeBase: For FAQ, Q&A, support docs`;
         }
 
         messages.push({

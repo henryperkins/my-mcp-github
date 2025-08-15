@@ -14,6 +14,7 @@ export interface StringSchema {
   type: "string";
   title?: string;
   description?: string;
+  default?: string;
   format?: "uri" | "email" | "date" | "date-time";
   minLength?: number;
   maxLength?: number;
@@ -23,6 +24,7 @@ export interface NumberSchema {
   type: "number" | "integer";
   title?: string;
   description?: string;
+  default?: number;
   minimum?: number;
   maximum?: number;
 }
@@ -38,6 +40,7 @@ export interface EnumSchema {
   type: "string";
   title?: string;
   description?: string;
+  default?: string;
   enum: string[];
   enumNames?: string[];
 }
@@ -163,6 +166,35 @@ export class ToolElicitationBuilder {
           }
         },
         required: ["indexName", "confirmation", "understood"]
+      }
+    };
+  }
+
+  static deleteSkillsetElicitation(skillsetName?: string): ElicitationRequest {
+    return {
+      message: `⚠️ WARNING: You are about to permanently delete the skillset${skillsetName ? ` '${skillsetName}'` : ''}. Any indexers using this skillset will fail until updated. This action cannot be undone. Please confirm.`,
+      requestedSchema: {
+        type: "object",
+        properties: {
+          skillsetName: {
+            type: "string",
+            title: "Skillset Name",
+            description: "Enter the exact name of the skillset to delete"
+          },
+          confirmation: {
+            type: "string",
+            title: "Confirmation",
+            description: "Type 'DELETE' to confirm deletion",
+            enum: ["DELETE"]
+          },
+          understood: {
+            type: "boolean",
+            title: "Acknowledgment",
+            description: "I understand this action is permanent and any indexers using this skillset will fail",
+            default: false
+          }
+        },
+        required: ["skillsetName", "confirmation", "understood"]
       }
     };
   }

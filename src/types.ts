@@ -20,10 +20,18 @@ import {
 export type GetClient = () => AzureSearchClient;
 export type GetSummarizer = () => Summarizer | null;
 
+// Interface for elicitation support (as per Cloudflare Agents SDK)
+export interface ElicitationCapable {
+  elicitInput?: (params: {
+    message: string;
+    requestedSchema: any;
+  }) => Promise<{ action: string; content?: any }>;
+}
+
 export interface ToolContext {
   getClient: GetClient;
   getSummarizer?: GetSummarizer;
-  agent?: unknown; // Reference to the McpAgent instance for elicitation support
+  agent?: ElicitationCapable; // Reference to the McpAgent instance for elicitation support
 }
 
 // Zod-inferred types for stronger safety across modules

@@ -1,6 +1,6 @@
 // src/DocumentTools.ts
 import { z } from "zod";
-import { ResponseFormatter } from "./utils/response-helper";
+import { ResponseFormatter } from "./utils/response";
 import getToolHints from "./utils/toolHints";
 import { ToolElicitationBuilder } from "./tool-elicitation";
 import { elicitIfNeeded } from "./utils/elicitation-integration";

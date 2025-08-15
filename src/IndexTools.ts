@@ -1,7 +1,7 @@
 // src/IndexTools.ts
 import { z } from "zod";
 import { IndexBuilder, IndexTemplates } from "./index-builder";
-import { ResponseFormatter } from "./utils/response-helper";
+import { ResponseFormatter } from "./utils/response";
 import { resolveAnalyzerForLanguage } from "./utils/languageAnalyzers";
 import getToolHints from "./utils/toolHints";
 import { paginateArray } from "./utils/streaming-pagination";
@@ -113,7 +113,10 @@ export function registerIndexTools(server: any, context: ToolContext) {
     async ({ includeStats, verbose }: { includeStats?: boolean; verbose?: boolean }) => {
       try {
         const client = getClient();
-        const indexes = await client.listIndexes();
+        // Use lightweight listing unless verbose is requested
+        const indexes = verbose
+          ? await client.listIndexes()
+          : await client.listIndexesSelected("name,fields,defaultScoringProfile,corsOptions,semantic,vectorSearch");
 
         if (verbose) {
           const structured = { indexes, count: indexes.length };
@@ -130,31 +133,62 @@ export function registerIndexTools(server: any, context: ToolContext) {
         }));
 
         if (includeStats) {
-          indexInfo = await Promise.all(
-            indexInfo.map(async (info: any) => {
-              try {
-                const stats: any = await client.getIndexStats(info.name);
-                const result = {
-                  ...info,
-                  documentCount: stats.documentCount || 0,
-                  storageSize: stats.storageSize || 0,
-                };
+          // Prefer aggregated stats endpoint to avoid N calls and timeouts
+          try {
+            const summary: any = await withTimeout(client.getIndexStatsSummary(), DEFAULT_TIMEOUT_MS, "getIndexStatsSummary");
+            const byName = new Map<string, any>();
+            const items = Array.isArray(summary?.value) ? summary.value : [];
+            for (const s of items) {
+              if (s?.name) byName.set(s.name, s);
+            }
 
-                // Add vector index size if available and non-zero
-                if (stats.vectorIndexSize && stats.vectorIndexSize > 0) {
-                  result.vectorIndexSize = stats.vectorIndexSize;
-                } else if (info.vectorSearchEnabled && stats.vectorIndexSize === 0) {
-                  // Note when vector search is enabled but size is 0
-                  result.vectorIndexSize = 0;
-                  result.vectorIndexNote = "Vector search enabled but size not reported";
-                }
-
-                return result;
-              } catch {
-                return info;
+            indexInfo = indexInfo.map((info: any) => {
+              const s = byName.get(info.name);
+              if (!s) return info;
+              const result: any = {
+                ...info,
+                documentCount: s.documentCount || 0,
+                storageSize: s.storageSize || 0,
+              };
+              if (typeof s.vectorIndexSize === "number") {
+                result.vectorIndexSize = s.vectorIndexSize;
+              } else if (info.vectorSearchEnabled) {
+                result.vectorIndexSize = 0;
+                result.vectorIndexNote = "Vector search enabled but size not reported";
               }
-            }),
-          );
+              return result;
+            });
+          } catch {
+            // Fallback: fetch per-index stats with modest concurrency to avoid overload
+            const concurrency = 5;
+            const out: any[] = [];
+            for (let i = 0; i < indexInfo.length; i += concurrency) {
+              const slice = indexInfo.slice(i, i + concurrency);
+              const chunk = await Promise.all(
+                slice.map(async (info: any) => {
+                  try {
+                    const stats: any = await withTimeout(client.getIndexStats(info.name), DEFAULT_TIMEOUT_MS, `getIndexStats:${info.name}`);
+                    const result = {
+                      ...info,
+                      documentCount: stats.documentCount || 0,
+                      storageSize: stats.storageSize || 0,
+                    } as any;
+                    if (typeof stats.vectorIndexSize === "number") {
+                      result.vectorIndexSize = stats.vectorIndexSize;
+                    } else if (info.vectorSearchEnabled) {
+                      result.vectorIndexSize = 0;
+                      result.vectorIndexNote = "Vector search enabled but size not reported";
+                    }
+                    return result;
+                  } catch {
+                    return info;
+                  }
+                })
+              );
+              out.push(...chunk);
+            }
+            indexInfo = out;
+          }
         }
 
         const structuredData = { indexes: indexInfo, count: indexInfo.length };
