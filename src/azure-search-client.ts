@@ -241,8 +241,12 @@ export class AzureSearchClient {
   }
 
   // Skillset operations
-  async listSkillsets(): Promise<unknown[]> {
-    const result = (await this.request('/skillsets')) as { value?: unknown[] };
+  async listSkillsets(select?: string): Promise<unknown[]> {
+    const params = new URLSearchParams();
+    if (select) params.append('$select', select);
+    const queryString = params.toString();
+    const url = queryString ? `/skillsets?${queryString}` : '/skillsets';
+    const result = (await this.request(url)) as { value?: unknown[] };
     return result.value || [];
   }
 
@@ -250,17 +254,36 @@ export class AzureSearchClient {
     return this.request(`/skillsets('${encodeURIComponent(name)}')`);
   }
 
-  async createOrUpdateSkillset(name: string, skillsetDefinition: unknown): Promise<unknown> {
-    return this.request(`/skillsets('${encodeURIComponent(name)}')`, {
-      method: 'PUT',
+  async createSkillset(skillsetDefinition: unknown): Promise<unknown> {
+    return this.request('/skillsets', {
+      method: 'POST',
       body: JSON.stringify(skillsetDefinition),
       headers: this.headers({ Prefer: "return=representation" }),
     });
   }
 
-  async deleteSkillset(name: string): Promise<unknown> {
+  async createOrUpdateSkillset(name: string, skillsetDefinition: unknown, additionalHeaders?: Record<string, string>): Promise<unknown> {
+    const headers = this.headers({ Prefer: "return=representation", ...additionalHeaders });
+    return this.request(`/skillsets('${encodeURIComponent(name)}')`, {
+      method: 'PUT',
+      body: JSON.stringify(skillsetDefinition),
+      headers,
+    });
+  }
+
+  async deleteSkillset(name: string, additionalHeaders?: Record<string, string>): Promise<unknown> {
     return this.request(`/skillsets('${encodeURIComponent(name)}')`, {
       method: 'DELETE',
+      headers: additionalHeaders ? this.headers(additionalHeaders) : undefined,
+    });
+  }
+
+  async resetSkills(skillsetName: string, skillNames?: string[]): Promise<unknown> {
+    const body = skillNames ? { skillNames } : {};
+    return this.request(`/skillsets('${encodeURIComponent(skillsetName)}')/search.resetskills`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: this.headers(),
     });
   }
 
@@ -383,29 +406,134 @@ export class AzureSearchClient {
     });
   }
 
-  // -------- Knowledge Agents (preview) --------
-  async listAgents(): Promise<unknown> {
-    return this.request(`/agents`);
+  // -------- Knowledge Agents (2025-08-01-preview) --------
+  async listKnowledgeAgents(verbose?: boolean): Promise<unknown> {
+    const params = new URLSearchParams();
+    if (verbose) {
+      params.append("$select", "*");
+    }
+    const query = params.toString();
+    return this.request(`/agents${query ? `?${query}` : ""}`);
   }
-  async getAgent(agentName: string): Promise<unknown> {
+
+  async getKnowledgeAgent(agentName: string): Promise<unknown> {
     return this.request(`/agents('${encodeURIComponent(agentName)}')`);
   }
-  async upsertAgent(agentName: string, agent: unknown, headers: Record<string,string> = {}): Promise<unknown> {
-    return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
-      method: "PUT",
-      headers: this.headers({ Prefer: "return=representation", ...headers }),
-      body: this.json(agent),
-    });
-  }
-  async createAgent(agent: unknown): Promise<unknown> {
+
+  async createKnowledgeAgent(agent: unknown): Promise<unknown> {
     return this.request(`/agents`, {
       method: "POST",
       headers: this.headers(),
       body: this.json(agent),
     });
   }
-  async deleteAgent(agentName: string, headers: Record<string,string> = {}): Promise<unknown> {
+
+  async createOrUpdateKnowledgeAgent(agentName: string, agent: unknown, options: { ifMatch?: string; ifNoneMatch?: string } = {}): Promise<unknown> {
+    const headers: Record<string, string> = { Prefer: "return=representation" };
+    if (options.ifMatch) headers["If-Match"] = options.ifMatch;
+    if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
+    
     return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
+      method: "PUT",
+      headers: this.headers(headers),
+      body: this.json(agent),
+    });
+  }
+
+  async deleteKnowledgeAgent(agentName: string, options: { ifMatch?: string; ifNoneMatch?: string } = {}): Promise<unknown> {
+    const headers: Record<string, string> = {};
+    if (options.ifMatch) headers["If-Match"] = options.ifMatch;
+    if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
+    
+    return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
+      method: "DELETE",
+      headers: this.headers(headers),
+    });
+  }
+
+  // -------- Knowledge Sources (2025-08-01-preview) --------
+  async listKnowledgeSources(verbose?: boolean, type?: string): Promise<unknown> {
+    const params = new URLSearchParams();
+    if (verbose) {
+      params.append("$select", "*");
+    }
+    if (type) {
+      params.append("$filter", `type eq '${type}'`);
+    }
+    const query = params.toString();
+    return this.request(`/knowledgesources${query ? `?${query}` : ""}`);
+  }
+
+  async getKnowledgeSource(sourceName: string): Promise<unknown> {
+    return this.request(`/knowledgesources('${encodeURIComponent(sourceName)}')`);
+  }
+
+  async createKnowledgeSource(source: unknown): Promise<unknown> {
+    return this.request(`/knowledgesources`, {
+      method: "POST",
+      headers: this.headers(),
+      body: this.json(source),
+    });
+  }
+
+  async createOrUpdateKnowledgeSource(sourceName: string, source: unknown, options: { ifMatch?: string; ifNoneMatch?: string } = {}): Promise<unknown> {
+    const headers: Record<string, string> = { Prefer: "return=representation" };
+    if (options.ifMatch) headers["If-Match"] = options.ifMatch;
+    if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
+    
+    return this.request(`/knowledgesources('${encodeURIComponent(sourceName)}')`, {
+      method: "PUT",
+      headers: this.headers(headers),
+      body: this.json(source),
+    });
+  }
+
+  async deleteKnowledgeSource(sourceName: string, options: { ifMatch?: string; ifNoneMatch?: string } = {}): Promise<unknown> {
+    const headers: Record<string, string> = {};
+    if (options.ifMatch) headers["If-Match"] = options.ifMatch;
+    if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
+    
+    return this.request(`/knowledgesources('${encodeURIComponent(sourceName)}')`, {
+      method: "DELETE",
+      headers: this.headers(headers),
+    });
+  }
+
+  // -------- Index Aliases --------
+  async listAliases(): Promise<unknown[]> {
+    const result = (await this.request(`/aliases`)) as { value?: unknown[] };
+    return result?.value || [];
+  }
+
+  async getAlias(aliasName: string): Promise<unknown> {
+    return this.request(`/aliases('${encodeURIComponent(aliasName)}')`);
+  }
+
+  async createAlias(alias: { name: string; indexes: string[] }): Promise<unknown> {
+    return this.request(`/aliases`, {
+      method: "POST",
+      headers: this.headers(),
+      body: this.json(alias),
+    });
+  }
+
+  async createOrUpdateAlias(aliasName: string, alias: { name?: string; indexes: string[] }, options: { ifMatch?: string; ifNoneMatch?: string } = {}): Promise<unknown> {
+    const headers: Record<string, string> = { Prefer: "return=representation" };
+    if (options.ifMatch) headers["If-Match"] = options.ifMatch;
+    if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
+    const body = { name: aliasName, ...alias };
+    return this.request(`/aliases('${encodeURIComponent(aliasName)}')`, {
+      method: "PUT",
+      headers: this.headers(headers),
+      body: this.json(body),
+    });
+  }
+
+  async deleteAlias(aliasName: string, options: { ifMatch?: string; ifNoneMatch?: string } = {}): Promise<unknown> {
+    const headers: Record<string, string> = {};
+    if (options.ifMatch) headers["If-Match"] = options.ifMatch;
+    if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
+    return this.request(`/aliases('${encodeURIComponent(aliasName)}')`, {
       method: "DELETE",
       headers: this.headers(headers),
     });

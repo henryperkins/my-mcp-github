@@ -127,6 +127,8 @@ export const IndexFieldSchema: z.ZodType<IndexFieldType> = z.object({
     "Edm.DateTimeOffset",
     "Edm.GeographyPoint",
     "Collection(Edm.String)",
+    // Align with 2025-08-01-preview: vector fields use Collection(Edm.Single)
+    "Collection(Edm.Single)",
     "Collection(Edm.Int32)",
     "Collection(Edm.Int64)",
     "Collection(Edm.Double)",
@@ -146,6 +148,9 @@ export const IndexFieldSchema: z.ZodType<IndexFieldType> = z.object({
   searchAnalyzer: z.string().optional(),
   indexAnalyzer: z.string().optional(),
   normalizer: z.string().optional(),
+  // Vector field properties (preview API):
+  dimensions: z.number().int().min(2).max(4096).optional(),
+  vectorSearchProfile: z.string().optional(),
   synonymMaps: z.array(z.string()).optional(),
   fields: z.lazy((): z.ZodType<IndexFieldType[]> => z.array(IndexFieldSchema)).optional()
 });

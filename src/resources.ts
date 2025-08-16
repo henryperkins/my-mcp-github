@@ -337,6 +337,256 @@ export function registerResources(server: any, getClient: () => any) {
     }
   );
 
+  // List of all skillsets - AI enrichment pipelines
+  server.resource(
+    "skillsets",
+    "List of all AI enrichment skillsets",
+    async () => {
+      try {
+        const c = getClient();
+        const skillsets = await c.listSkillsets();
+        
+        const skillsetInfo = (skillsets as any[]).map((s: any) => ({
+          name: s.name,
+          description: s.description,
+          skillCount: s.skills ? s.skills.length : 0,
+          skills: s.skills ? s.skills.map((skill: any) => ({
+            type: skill["@odata.type"]?.split('.').pop()?.replace('Skill', ''),
+            name: skill.name,
+            description: skill.description
+          })) : [],
+          cognitiveServices: s.cognitiveServices ? s.cognitiveServices["@odata.type"]?.split('.').pop() : "none",
+          knowledgeStore: s.knowledgeStore ? "configured" : "none",
+          etag: s["@odata.etag"]
+        }));
+        
+        return createResourceResponse(
+          "skillsets",
+          "Skillsets",
+          "🧠 AI Enrichment Skillsets",
+          `${skillsets.length} skillset${skillsets.length !== 1 ? 's' : ''} for cognitive enrichment`,
+          { 
+            skillsets: skillsetInfo, 
+            count: skillsets.length,
+            totalSkills: skillsetInfo.reduce((sum, s) => sum + s.skillCount, 0)
+          },
+          {
+            audience: ["assistant", "user"],
+            priority: 0.7,
+            lastModified: new Date().toISOString()
+          }
+        );
+      } catch (error) {
+        return createResourceResponse(
+          "skillsets",
+          "Skillsets",
+          "🧠 Skillsets (Error)",
+          "Failed to retrieve skillsets",
+          { error: String(error) },
+          { audience: ["assistant"], priority: 0.2 }
+        );
+      }
+    }
+  );
+
+  // Query examples and best practices
+  server.resource(
+    "query-examples",
+    "Azure Search query examples and patterns",
+    async () => {
+      const examples = {
+        basic: {
+          description: "Simple text search",
+          query: {
+            search: "azure cloud",
+            searchMode: "all",
+            top: 10
+          }
+        },
+        filtered: {
+          description: "Search with filters",
+          query: {
+            search: "*",
+            filter: "category eq 'documentation' and lastModified ge 2024-01-01",
+            orderby: "lastModified desc",
+            top: 20
+          }
+        },
+        faceted: {
+          description: "Search with facets for filtering UI",
+          query: {
+            search: "*",
+            facets: ["category,count:10", "tags,count:20"],
+            top: 10
+          }
+        },
+        semantic: {
+          description: "Semantic search with answers",
+          query: {
+            search: "how to configure authentication",
+            queryType: "semantic",
+            semanticConfiguration: "default",
+            answers: "extractive|count-3",
+            captions: "extractive|highlight-true"
+          }
+        },
+        vector: {
+          description: "Vector similarity search",
+          query: {
+            vectorQueries: [{
+              kind: "text",
+              text: "modern cloud architecture patterns",
+              k: 10,
+              fields: "contentVector"
+            }]
+          }
+        },
+        hybrid: {
+          description: "Combined keyword and vector search",
+          query: {
+            search: "microservices",
+            vectorQueries: [{
+              kind: "text",
+              text: "microservices architecture patterns",
+              k: 5,
+              fields: "contentVector"
+            }],
+            top: 10
+          }
+        },
+        autocomplete: {
+          description: "Autocomplete/suggestions",
+          query: {
+            search: "azur",
+            suggesterName: "default-suggester",
+            autocompleteMode: "oneTerm",
+            top: 5
+          }
+        }
+      };
+      
+      return createResourceResponse(
+        "query-examples",
+        "Query Examples",
+        "🔍 Azure Search Query Examples",
+        "Common query patterns and best practices",
+        {
+          examples,
+          tips: [
+            "Use searchMode='all' to require all search terms",
+            "Apply filters for better performance than post-filtering",
+            "Use facets to build filter UI components",
+            "Enable semantic search for natural language queries",
+            "Combine vector and keyword search for best results",
+            "Use field-specific searches with searchFields parameter",
+            "Leverage scoring profiles for custom relevance"
+          ]
+        },
+        {
+          audience: ["user", "assistant"],
+          priority: 0.9,
+          lastModified: new Date().toISOString()
+        }
+      );
+    }
+  );
+
+  // Schema documentation - field types and capabilities
+  server.resource(
+    "schema-reference",
+    "Azure Search field types and capabilities reference",
+    async () => {
+      const fieldTypes = {
+        "Edm.String": {
+          description: "Text data",
+          capabilities: ["searchable", "filterable", "sortable", "facetable", "retrievable"],
+          maxLength: 32766,
+          useCase: "General text content, titles, descriptions"
+        },
+        "Edm.Int32": {
+          description: "32-bit integer",
+          capabilities: ["filterable", "sortable", "facetable", "retrievable"],
+          range: "-2^31 to 2^31-1",
+          useCase: "Counts, IDs, numeric codes"
+        },
+        "Edm.Int64": {
+          description: "64-bit integer",
+          capabilities: ["filterable", "sortable", "facetable", "retrievable"],
+          range: "-2^63 to 2^63-1",
+          useCase: "Large IDs, timestamps"
+        },
+        "Edm.Double": {
+          description: "Double-precision floating point",
+          capabilities: ["filterable", "sortable", "facetable", "retrievable"],
+          useCase: "Prices, measurements, coordinates"
+        },
+        "Edm.Boolean": {
+          description: "Boolean value",
+          capabilities: ["filterable", "sortable", "facetable", "retrievable"],
+          useCase: "Flags, binary states"
+        },
+        "Edm.DateTimeOffset": {
+          description: "Date and time with timezone",
+          capabilities: ["filterable", "sortable", "facetable", "retrievable"],
+          format: "yyyy-MM-ddTHH:mm:ss.fffZ",
+          useCase: "Timestamps, scheduling"
+        },
+        "Edm.GeographyPoint": {
+          description: "Geographic coordinates",
+          capabilities: ["filterable", "sortable", "retrievable"],
+          format: "POINT(longitude latitude)",
+          useCase: "Location-based search"
+        },
+        "Collection(Edm.String)": {
+          description: "Array of strings",
+          capabilities: ["searchable", "filterable", "facetable", "retrievable"],
+          maxElements: 3000,
+          useCase: "Tags, categories, multi-valued attributes"
+        },
+        "Collection(Edm.Single)": {
+          description: "Vector embeddings",
+          capabilities: ["searchable", "retrievable"],
+          dimensions: "configurable (e.g., 1536)",
+          useCase: "Vector similarity search, embeddings"
+        }
+      };
+      
+      const capabilities = {
+        searchable: "Full-text search with linguistic analysis",
+        filterable: "Can be used in filter expressions",
+        sortable: "Can be used in orderby expressions",
+        facetable: "Can be used for faceted navigation",
+        retrievable: "Can be returned in search results",
+        key: "Unique identifier for documents"
+      };
+      
+      return createResourceResponse(
+        "schema-reference",
+        "Schema Reference",
+        "📘 Field Types & Capabilities Reference",
+        "Complete guide to Azure Search field types",
+        {
+          fieldTypes,
+          capabilities,
+          bestPractices: [
+            "Mark only necessary fields as retrievable to reduce payload size",
+            "Use Collection(Edm.String) for tags and categories",
+            "Enable searchable only on fields that need full-text search",
+            "Use filterable for fields used in WHERE clauses",
+            "Consider field size limits when designing schema",
+            "Use Edm.GeographyPoint for geo-spatial queries",
+            "Configure analyzers for language-specific text processing"
+          ]
+        },
+        {
+          audience: ["user", "assistant"],
+          priority: 0.8,
+          lastModified: new Date().toISOString()
+        }
+      );
+    }
+  );
+
   // ---------------- PARAMETERIZED RESOURCES ----------------
   
   // Individual index definition + stats
@@ -633,6 +883,272 @@ export function registerResources(server: any, getClient: () => any) {
       }
     }
   );
+
+  // Individual skillset details
+  server.resource(
+    "skillsets/{name}",
+    "AI enrichment skillset configuration",
+    async ({ name }: any) => {
+      try {
+        const c = getClient();
+        const skillset = await c.getSkillset(name);
+        
+        // Enhanced skillset information
+        const enhanced = {
+          ...skillset,
+          summary: {
+            totalSkills: (skillset as any).skills?.length || 0,
+            skillTypes: [...new Set((skillset as any).skills?.map((s: any) => 
+              s["@odata.type"]?.split('.').pop()?.replace('Skill', '')
+            ) || [])],
+            hasKnowledgeStore: !!(skillset as any).knowledgeStore,
+            cognitiveServicesType: (skillset as any).cognitiveServices?.["@odata.type"]?.split('.').pop() || "none"
+          }
+        };
+        
+        return createResourceResponse(
+          `skillsets/${name}`,
+          name,
+          `🧠 Skillset: ${name}`,
+          (skillset as any).description || "AI enrichment pipeline",
+          enhanced,
+          {
+            audience: ["assistant", "user"],
+            priority: 0.7,
+            lastModified: new Date().toISOString()
+          }
+        );
+      } catch (error) {
+        return createResourceResponse(
+          `skillsets/${name}`,
+          name,
+          `🧠 Skillset: ${name} (Error)`,
+          "Failed to retrieve skillset",
+          { error: String(error) },
+          { audience: ["assistant"], priority: 0.2 }
+        );
+      }
+    }
+  );
+// Additional dynamic Resource Templates
+
+// 1) Live search via template with optional keyword, filter, and vector params
+server.resourceTemplate?.(
+  "indexes/{indexName}/search",
+  "Live search within an index (supports q, top, select, filter, queryType, semanticConfiguration, vectorText, vectorK, vectorFields)",
+  async (params: any) => {
+    try {
+      const c = getClient();
+      const {
+        indexName,
+        q,
+        top,
+        select,
+        filter,
+        queryType,
+        semanticConfiguration,
+        vectorText,
+        vectorK,
+        vectorFields
+      } = params || {};
+
+      const body: Record<string, any> = {
+        search: (q ?? "*"),
+        count: true
+      };
+
+      if (top !== undefined) {
+        const n = Number(top);
+        if (!Number.isNaN(n)) body.top = n;
+      }
+      if (select) body.select = String(select);
+      if (filter) body.filter = String(filter);
+      if (queryType) body.queryType = String(queryType);
+      if (semanticConfiguration) body.semanticConfiguration = String(semanticConfiguration);
+
+      // Optional vector query (hybrid or pure vector)
+      if (vectorText) {
+        const k = vectorK !== undefined ? Number(vectorK) : 10;
+        body.vectorQueries = [
+          {
+            kind: "text",
+            text: String(vectorText),
+            k: Number.isFinite(k) ? k : 10,
+            ...(vectorFields ? { fields: String(vectorFields) } : {})
+          }
+        ];
+      }
+
+      const result = await c.searchDocuments(String(indexName), body);
+
+      return createResourceResponse(
+        `indexes/${indexName}/search`,
+        `Search ${indexName}`,
+        `🔎 Search: ${indexName}`,
+        `Search results for ${q ?? "*"}`,
+        {
+          params: { indexName, q, top, select, filter, queryType, semanticConfiguration, vectorText, vectorK, vectorFields },
+          totalResults: result["@odata.count"],
+          returnedResults: Array.isArray((result as any).value) ? (result as any).value.length : 0,
+          results: (result as any).value
+        },
+        {
+          audience: ["assistant", "user"],
+          priority: 0.9,
+          lastModified: new Date().toISOString()
+        }
+      );
+    } catch (error) {
+      return createResourceResponse(
+        `indexes/${params?.indexName}/search`,
+        `Search ${params?.indexName}`,
+        `🔎 Search Error`,
+        `Failed to search index ${params?.indexName}`,
+        { error: String(error) },
+        { audience: ["assistant"], priority: 0.3 }
+      );
+    }
+  }
+);
+
+// 2) Individual field details within an index
+server.resourceTemplate?.(
+  "indexes/{indexName}/fields/{fieldName}",
+  "Inspect an index field definition and capabilities",
+  async ({ indexName, fieldName }: any) => {
+    try {
+      const c = getClient();
+      const def: any = await c.getIndex(String(indexName));
+      const fields: any[] = Array.isArray(def?.fields) ? def.fields : [];
+      const field = fields.find(
+        (f: any) => String(f?.name || "").toLowerCase() === String(fieldName || "").toLowerCase()
+      );
+
+      if (!field) {
+        return createResourceResponse(
+          `indexes/${indexName}/fields/${fieldName}`,
+          String(fieldName),
+          `📌 Field: ${fieldName} (Not Found)`,
+          `Field ${fieldName} not found in index ${indexName}`,
+          { error: "Resource not found", indexName, fieldName },
+          { audience: ["assistant"], priority: 0.2 }
+        );
+      }
+
+      const derived = {
+        isKey: !!field.key,
+        isVectorField: field.type === "Collection(Edm.Single)",
+        capabilities: {
+          searchable: !!field.searchable,
+          filterable: !!field.filterable,
+          sortable: !!field.sortable,
+          facetable: !!field.facetable,
+          retrievable: field.retrievable !== false
+        },
+        analyzers: {
+          analyzer: field.analyzer || null,
+          searchAnalyzer: field.searchAnalyzer || null,
+          indexAnalyzer: field.indexAnalyzer || null,
+          normalizer: field.normalizer || null
+        },
+        vector: field.type === "Collection(Edm.Single)" ? {
+          dimensions: field.dimensions ?? null,
+          vectorSearchProfile: field.vectorSearchProfile ?? null
+        } : null
+      };
+
+      return createResourceResponse(
+        `indexes/${indexName}/fields/${fieldName}`,
+        String(fieldName),
+        `📌 Field: ${fieldName}`,
+        `Field definition for ${fieldName} in index ${indexName}`,
+        {
+          indexName,
+          fieldName,
+          field,
+          derived
+        },
+        {
+          audience: ["assistant", "user"],
+          priority: 0.6,
+          lastModified: new Date().toISOString()
+        }
+      );
+    } catch (error) {
+      return createResourceResponse(
+        `indexes/${indexName}/fields/${fieldName}`,
+        String(fieldName),
+        `📌 Field: ${fieldName} (Error)`,
+        `Failed to retrieve field ${fieldName} in ${indexName}`,
+        { error: String(error) },
+        { audience: ["assistant"], priority: 0.3 }
+      );
+    }
+  }
+);
+
+// 3) Specific skill details within a skillset
+server.resourceTemplate?.(
+  "skillsets/{name}/skills/{skillName}",
+  "Inspect a specific skill configuration in a skillset",
+  async ({ name, skillName }: any) => {
+    try {
+      const c = getClient();
+      const skillset: any = await c.getSkillset(String(name));
+      const skills: any[] = Array.isArray(skillset?.skills) ? skillset.skills : [];
+      const skill = skills.find(
+        (s: any) => String(s?.name || "").toLowerCase() === String(skillName || "").toLowerCase()
+      );
+
+      if (!skill) {
+        return createResourceResponse(
+          `skillsets/${name}/skills/${skillName}`,
+          String(skillName),
+          `🧩 Skill: ${skillName} (Not Found)`,
+          `Skill ${skillName} not found in skillset ${name}`,
+          { error: "Resource not found", skillset: name, skillName },
+          { audience: ["assistant"], priority: 0.2 }
+        );
+      }
+
+      const type = skill["@odata.type"]?.split(".").pop() || "Unknown";
+      const summary = {
+        type,
+        inputs: Array.isArray(skill.inputs) ? skill.inputs.map((i: any) => ({ name: i.name, source: i.source })) : [],
+        outputs: Array.isArray(skill.outputs) ? skill.outputs.map((o: any) => ({ name: o.name, targetName: o.targetName })) : [],
+        context: skill.context || "/document"
+      };
+
+      return createResourceResponse(
+        `skillsets/${name}/skills/${skillName}`,
+        String(skillName),
+        `🧩 Skill: ${skillName}`,
+        `Skill configuration for ${skillName} in ${name}`,
+        {
+          skillset: name,
+          skillName,
+          skill,
+          summary
+        },
+        {
+          audience: ["assistant", "user"],
+          priority: 0.6,
+          lastModified: new Date().toISOString()
+        }
+      );
+    } catch (error) {
+      return createResourceResponse(
+        `skillsets/${name}/skills/${skillName}`,
+        String(skillName),
+        `🧩 Skill: ${skillName} (Error)`,
+        `Failed to retrieve skill ${skillName} in ${name}`,
+        { error: String(error) },
+        { audience: ["assistant"], priority: 0.3 }
+      );
+    }
+  }
+);
+
 
   // Note: The server capabilities declare support for listChanged notifications.
   // In a production environment with proper MCP notification support,
