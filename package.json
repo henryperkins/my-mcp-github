@@ -5,9 +5,12 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "deploy:tail": "wrangler deploy -c tail-worker/wrangler.jsonc",
+    "deploy:legacy": "wrangler deploy src/index.ts",
     "dev": "wrangler dev",
     "dev:both": "wrangler dev -c wrangler.jsonc -c tail-worker/wrangler.jsonc",
+    "dev:legacy": "wrangler dev src/index.ts",
     "start": "wrangler dev",
+    "build:dynamic": "tsc -p tsconfig.json --noEmit",
     "cf-typegen": "wrangler types",
     "type-check": "tsc --noEmit"
   },

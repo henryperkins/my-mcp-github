@@ -63,7 +63,7 @@ export class AzureSearchClient {
     addHeader("Content-Type", "application/json");
 
     const headers: HeadersInit = mergedHeaders;
-    
+
     // Basic retry-with-backoff for 429/503
     const maxRetries = 3;
     let attempt = 0;
@@ -136,11 +136,11 @@ export class AzureSearchClient {
       headers['If-Match'] = etag;
     }
     headers['Prefer'] = 'return=representation';
-    
+
     // Remove @odata.etag from body if present
     const cleanDefinition = { ...indexDefinition };
     delete cleanDefinition['@odata.etag'];
-    
+
     return this.request(`/indexes('${encodeURIComponent(indexName)}')`, {
       method: 'PUT',
       body: JSON.stringify(cleanDefinition),
@@ -177,8 +177,9 @@ export class AzureSearchClient {
   }
 
   // Data source operations
-  async listDataSources(): Promise<unknown[]> {
-    const result = (await this.request('/datasources')) as { value?: unknown[] };
+  async listDataSources(select?: string): Promise<unknown[]> {
+    const url = select ? `/datasources?$select=${encodeURIComponent(select)}` : "/datasources";
+    const result = (await this.request(url)) as { value?: unknown[] };
     return result.value || [];
   }
 
@@ -210,11 +211,29 @@ export class AzureSearchClient {
     return this.request(`/indexers('${encodeURIComponent(name)}')`);
   }
 
-  async createOrUpdateIndexer(name: string, indexerDefinition: unknown): Promise<unknown> {
-    return this.request(`/indexers('${encodeURIComponent(name)}')`, {
+  async createOrUpdateIndexer(
+    name: string,
+    indexerDefinition: unknown,
+    options: {
+      ignoreResetRequirements?: boolean;
+      disableCacheReprocessingChangeDetection?: boolean;
+      ifMatch?: string;
+      ifNoneMatch?: string;
+    } = {}
+  ): Promise<unknown> {
+    const qp: string[] = [];
+    if (options.ignoreResetRequirements) qp.push("ignoreResetRequirements=true");
+    if (options.disableCacheReprocessingChangeDetection) qp.push("disableCacheReprocessingChangeDetection=true");
+    const qs = qp.length ? `?${qp.join("&")}` : "";
+
+    const headers: Record<string, string> = { Prefer: "return=representation" };
+    if (options.ifMatch) headers["If-Match"] = options.ifMatch;
+    if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
+
+    return this.request(`/indexers('${encodeURIComponent(name)}')${qs}`, {
       method: 'PUT',
       body: JSON.stringify(indexerDefinition),
-      headers: this.headers({ Prefer: "return=representation" }),
+      headers: this.headers(headers),
     });
   }
 
@@ -233,6 +252,33 @@ export class AzureSearchClient {
   async resetIndexer(name: string): Promise<unknown> {
     return this.request(`/indexers('${encodeURIComponent(name)}')/search.reset`, {
       method: 'POST',
+    });
+  }
+
+  // Reset specific documents for selective re-ingestion
+  async resetIndexerDocs(
+    name: string,
+    keysOrIds?: { documentKeys?: string[]; datasourceDocumentIds?: string[] },
+    overwrite = false
+  ): Promise<unknown> {
+    const qs = overwrite ? "?overwrite=true" : "";
+    return this.request(`/indexers('${encodeURIComponent(name)}')/search.resetdocs${qs}`, {
+      method: 'POST',
+      body: this.json(keysOrIds || {}),
+      headers: this.headers(),
+    });
+  }
+
+  // Resync selective options (e.g., permissions) from the datasource
+  async resyncIndexer(
+    name: string,
+    options: Array<"permissions">
+  ): Promise<unknown> {
+    const body = { options };
+    return this.request(`/indexers('${encodeURIComponent(name)}')/search.resync`, {
+      method: 'POST',
+      body: this.json(body),
+      headers: this.headers(),
     });
   }
 
@@ -329,7 +375,7 @@ export class AzureSearchClient {
 
   async uploadDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
-      value: documents.map(doc => 
+      value: documents.map(doc =>
         doc['@search.action'] ? doc : {
           '@search.action': 'upload' as const,
           ...doc
@@ -341,7 +387,7 @@ export class AzureSearchClient {
 
   async mergeDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
-      value: documents.map(doc => 
+      value: documents.map(doc =>
         doc['@search.action'] ? doc : {
           '@search.action': 'merge' as const,
           ...doc
@@ -353,7 +399,7 @@ export class AzureSearchClient {
 
   async mergeOrUploadDocuments(indexName: string, documents: SearchDocument[]): Promise<OperationResult> {
     const batch = {
-      value: documents.map(doc => 
+      value: documents.map(doc =>
         doc['@search.action'] ? doc : {
           '@search.action': 'mergeOrUpload' as const,
           ...doc
@@ -432,7 +478,7 @@ export class AzureSearchClient {
     const headers: Record<string, string> = { Prefer: "return=representation" };
     if (options.ifMatch) headers["If-Match"] = options.ifMatch;
     if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
-    
+
     return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
       method: "PUT",
       headers: this.headers(headers),
@@ -444,7 +490,7 @@ export class AzureSearchClient {
     const headers: Record<string, string> = {};
     if (options.ifMatch) headers["If-Match"] = options.ifMatch;
     if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
-    
+
     return this.request(`/agents('${encodeURIComponent(agentName)}')`, {
       method: "DELETE",
       headers: this.headers(headers),
@@ -452,13 +498,10 @@ export class AzureSearchClient {
   }
 
   // -------- Knowledge Sources (2025-08-01-preview) --------
-  async listKnowledgeSources(verbose?: boolean, type?: string): Promise<unknown> {
+  async listKnowledgeSources(verbose?: boolean): Promise<unknown> {
     const params = new URLSearchParams();
     if (verbose) {
       params.append("$select", "*");
-    }
-    if (type) {
-      params.append("$filter", `type eq '${type}'`);
     }
     const query = params.toString();
     return this.request(`/knowledgesources${query ? `?${query}` : ""}`);
@@ -480,7 +523,7 @@ export class AzureSearchClient {
     const headers: Record<string, string> = { Prefer: "return=representation" };
     if (options.ifMatch) headers["If-Match"] = options.ifMatch;
     if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
-    
+
     return this.request(`/knowledgesources('${encodeURIComponent(sourceName)}')`, {
       method: "PUT",
       headers: this.headers(headers),
@@ -492,7 +535,7 @@ export class AzureSearchClient {
     const headers: Record<string, string> = {};
     if (options.ifMatch) headers["If-Match"] = options.ifMatch;
     if (options.ifNoneMatch) headers["If-None-Match"] = options.ifNoneMatch;
-    
+
     return this.request(`/knowledgesources('${encodeURIComponent(sourceName)}')`, {
       method: "DELETE",
       headers: this.headers(headers),

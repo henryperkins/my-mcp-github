@@ -1,34 +1,31 @@
-# MCP TypeScript SDK ![NPM Version](https://img.shields.io/npm/v/%40modelcontextprotocol%2Fsdk) ![MIT licensed](https://img.shields.io/npm/l/%40modelcontextprotocol%2Fsdk)
+The official TypeScript SDK for Model Context Protocol servers and clients
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Installation](#installation)
-- [Quickstart](#quick-start)
-- [What is MCP?](#what-is-mcp)
-- [Core Concepts](#core-concepts)
-  - [Server](#server)
-  - [Resources](#resources)
-  - [Tools](#tools)
-  - [Prompts](#prompts)
-  - [Completions](#completions)
-  - [Sampling](#sampling)
-- [Running Your Server](#running-your-server)
-  - [stdio](#stdio)
-  - [Streamable HTTP](#streamable-http)
-  - [Testing and Debugging](#testing-and-debugging)
-- [Examples](#examples)
-  - [Echo Server](#echo-server)
-  - [SQLite Explorer](#sqlite-explorer)
-- [Advanced Usage](#advanced-usage)
-  - [Dynamic Servers](#dynamic-servers)
-  - [Low-Level Server](#low-level-server)
-  - [Writing MCP Clients](#writing-mcp-clients)
-  - [Proxy Authorization Requests Upstream](#proxy-authorization-requests-upstream)
-  - [Backwards Compatibility](#backwards-compatibility)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
+- [Overview](https://github.com/modelcontextprotocol/#overview)
+- [Installation](https://github.com/modelcontextprotocol/#installation)
+- [Quickstart](https://github.com/modelcontextprotocol/#quick-start)
+- [What is MCP?](https://github.com/modelcontextprotocol/#what-is-mcp)
+- [Core Concepts](https://github.com/modelcontextprotocol/#core-concepts)
+	- [Server](https://github.com/modelcontextprotocol/#server)
+	- [Resources](https://github.com/modelcontextprotocol/#resources)
+	- [Tools](https://github.com/modelcontextprotocol/#tools)
+	- [Prompts](https://github.com/modelcontextprotocol/#prompts)
+	- [Completions](https://github.com/modelcontextprotocol/#completions)
+	- [Sampling](https://github.com/modelcontextprotocol/#sampling)
+- [Running Your Server](https://github.com/modelcontextprotocol/#running-your-server)
+	- [stdio](https://github.com/modelcontextprotocol/#stdio)
+	- [Streamable HTTP](https://github.com/modelcontextprotocol/#streamable-http)
+	- [Testing and Debugging](https://github.com/modelcontextprotocol/#testing-and-debugging)
+- [Examples](https://github.com/modelcontextprotocol/#examples)
+	- [Echo Server](https://github.com/modelcontextprotocol/#echo-server)
+	- [SQLite Explorer](https://github.com/modelcontextprotocol/#sqlite-explorer)
+- [Advanced Usage](https://github.com/modelcontextprotocol/#advanced-usage)
+	- [Dynamic Servers](https://github.com/modelcontextprotocol/#dynamic-servers)
+	- [Low-Level Server](https://github.com/modelcontextprotocol/#low-level-server)
+	- [Writing MCP Clients](https://github.com/modelcontextprotocol/#writing-mcp-clients)
+	- [Backwards Compatibility](https://github.com/modelcontextprotocol/#backwards-compatibility)
+- [Documentation](https://github.com/modelcontextprotocol/#documentation)
+- [Contributing](https://github.com/modelcontextprotocol/#contributing)
+- [License](https://github.com/modelcontextprotocol/#license)
 
 ## Overview
 
@@ -41,7 +38,7 @@ The Model Context Protocol allows applications to provide context for LLMs in a 
 
 ## Installation
 
-```bash
+```
 npm install @modelcontextprotocol/sdk
 ```
 
@@ -51,7 +48,7 @@ npm install @modelcontextprotocol/sdk
 
 Let's create a simple MCP server that exposes a calculator tool and some data:
 
-```typescript
+```
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -85,7 +82,7 @@ server.registerResource(
   async (uri, { name }) => ({
     contents: [{
       uri: uri.href,
-      text: `Hello, ${name}!`
+      text: \`Hello, ${name}!\`
     }]
   })
 );
@@ -95,9 +92,7 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 ```
 
-## What is MCP?
-
-The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) lets you build servers that expose data and functionality to LLM applications in a secure, standardized way. Think of it like a web API, but specifically designed for LLM interactions. MCP servers can:
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) lets you build servers that expose data and functionality to LLM applications in a secure, standardized way. Think of it like a web API, but specifically designed for LLM interactions. MCP servers can:
 
 - Expose data through **Resources** (think of these sort of like GET endpoints; they are used to load information into the LLM's context)
 - Provide functionality through **Tools** (sort of like POST endpoints; they are used to execute code or otherwise produce a side effect)
@@ -110,7 +105,7 @@ The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) lets you bui
 
 The McpServer is your core interface to the MCP protocol. It handles connection management, protocol compliance, and message routing:
 
-```typescript
+```
 const server = new McpServer({
   name: "my-app",
   version: "1.0.0"
@@ -121,7 +116,7 @@ const server = new McpServer({
 
 Resources are how you expose data to LLMs. They're similar to GET endpoints in a REST API - they provide data but shouldn't perform significant computation or have side effects:
 
-```typescript
+```
 // Static resource
 server.registerResource(
   "config",
@@ -150,7 +145,7 @@ server.registerResource(
   async (uri, { userId }) => ({
     contents: [{
       uri: uri.href,
-      text: `Profile data for user ${userId}`
+      text: \`Profile data for user ${userId}\`
     }]
   })
 );
@@ -177,7 +172,7 @@ server.registerResource(
   async (uri, { owner, repo }) => ({
     contents: [{
       uri: uri.href,
-      text: `Repository: ${owner}/${repo}`
+      text: \`Repository: ${owner}/${repo}\`
     }]
   })
 );
@@ -187,7 +182,7 @@ server.registerResource(
 
 Tools let LLMs take actions through your server. Unlike resources, tools are expected to perform computation and have side effects:
 
-```typescript
+```
 // Simple tool with parameters
 server.registerTool(
   "calculate-bmi",
@@ -216,7 +211,7 @@ server.registerTool(
     inputSchema: { city: z.string() }
   },
   async ({ city }) => {
-    const response = await fetch(`https://api.weather.com/${city}`);
+    const response = await fetch(\`https://api.weather.com/${city}\`);
     const data = await response.text();
     return {
       content: [{ type: "text", text: data }]
@@ -234,7 +229,7 @@ server.registerTool(
   },
   async ({ pattern }) => ({
     content: [
-      { type: "text", text: `Found files matching "${pattern}":` },
+      { type: "text", text: \`Found files matching "${pattern}":\` },
       // ResourceLinks let tools return references without file content
       {
         type: "resource_link",
@@ -263,7 +258,7 @@ Tools can return `ResourceLink` objects to reference resources without embedding
 
 Prompts are reusable templates that help LLMs interact with your server effectively:
 
-```typescript
+```
 import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 
 server.registerPrompt(
@@ -278,7 +273,7 @@ server.registerPrompt(
       role: "user",
       content: {
         type: "text",
-        text: `Please review this code:\n\n${code}`
+        text: \`Please review this code:\n\n${code}\`
       }
     }]
   })
@@ -314,7 +309,7 @@ server.registerPrompt(
       role: "assistant",
       content: {
         type: "text",
-        text: `Hello ${name}, welcome to the ${department} team!`
+        text: \`Hello ${name}, welcome to the ${department} team!\`
       }
     }]
   })
@@ -323,11 +318,11 @@ server.registerPrompt(
 
 ### Completions
 
-MCP supports argument completions to help users fill in prompt arguments and resource template parameters. See the examples above for [resource completions](#resources) and [prompt completions](#prompts).
+MCP supports argument completions to help users fill in prompt arguments and resource template parameters. See the examples above for [resource completions](https://github.com/modelcontextprotocol/#resources) and [prompt completions](https://github.com/modelcontextprotocol/#prompts).
 
 #### Client Usage
 
-```typescript
+```
 // Request completions for any argument
 const result = await client.complete({
   ref: {
@@ -344,52 +339,26 @@ const result = await client.complete({
     }
   }
 });
-
 ```
-
-### Display Names and Metadata
 
 All resources, tools, and prompts support an optional `title` field for better UI presentation. The `title` is used as a display name, while `name` remains the unique identifier.
 
 **Note:** The `register*` methods (`registerTool`, `registerPrompt`, `registerResource`) are the recommended approach for new code. The older methods (`tool`, `prompt`, `resource`) remain available for backwards compatibility.
 
-#### Title Precedence for Tools
-
 For tools specifically, there are two ways to specify a title:
+
 - `title` field in the tool configuration
 - `annotations.title` field (when using the older `tool()` method with annotations)
 
 The precedence order is: `title` → `annotations.title` → `name`
 
-```typescript
-// Using registerTool (recommended)
-server.registerTool("my_tool", {
-  title: "My Tool",              // This title takes precedence
-  annotations: {
-    title: "Annotation Title"    // This is ignored if title is set
-  }
-}, handler);
-
-// Using tool with annotations (older API)
-server.tool("my_tool", "description", {
-  title: "Annotation Title"      // This is used as title
-}, handler);
-```
-
 When building clients, use the provided utility to get the appropriate display name:
-
-```typescript
-import { getDisplayName } from "@modelcontextprotocol/sdk/shared/metadataUtils.js";
-
-// Automatically handles the precedence: title → annotations.title → name
-const displayName = getDisplayName(tool);
-```
 
 ### Sampling
 
 MCP servers can request LLM completions from connected clients that support sampling.
 
-```typescript
+```
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -416,7 +385,7 @@ mcpServer.registerTool(
           role: "user",
           content: {
             type: "text",
-            text: `Please summarize the following text concisely:\n\n${text}`,
+            text: \`Please summarize the following text concisely:\n\n${text}\`,
           },
         },
       ],
@@ -446,16 +415,13 @@ main().catch((error) => {
 });
 ```
 
-
-## Running Your Server
-
 MCP servers in TypeScript need to be connected to a transport to communicate with clients. How you start the server depends on the choice of transport:
 
 ### stdio
 
 For command-line tools and direct integrations:
 
-```typescript
+```
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -474,18 +440,14 @@ await server.connect(transport);
 
 For remote servers, set up a Streamable HTTP transport that handles both client requests and server-to-client notifications.
 
-#### With Session Management
-
 In some cases, servers need to be stateful. This is achieved by [session management](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#session-management).
 
-```typescript
+```
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
-
-
 
 const app = express();
 app.use(express.json());
@@ -569,36 +531,17 @@ app.delete('/mcp', handleSessionRequest);
 app.listen(3000);
 ```
 
-> [!TIP]
-> When using this in a remote environment, make sure to allow the header parameter `mcp-session-id` in CORS. Otherwise, it may result in a `Bad Request: No valid session ID provided` error. Read the following section for examples.
-
-
-#### CORS Configuration for Browser-Based Clients
-
 If you'd like your server to be accessible by browser-based MCP clients, you'll need to configure CORS headers. The `Mcp-Session-Id` header must be exposed for browser clients to access it:
 
-```typescript
-import cors from 'cors';
-
-// Add CORS middleware before your MCP routes
-app.use(cors({
-  origin: '*', // Configure appropriately for production, for example:
-  // origin: ['https://your-remote-domain.com', 'https://your-other-remote-domain.com'],
-  exposedHeaders: ['Mcp-Session-Id'],
-  allowedHeaders: ['Content-Type', 'mcp-session-id'],
-}));
-```
-
 This configuration is necessary because:
+
 - The MCP streamable HTTP transport uses the `Mcp-Session-Id` header for session management
 - Browsers restrict access to response headers unless explicitly exposed via CORS
 - Without this configuration, browser-based clients won't be able to read the session ID from initialization responses
 
-#### Without Session Management (Stateless)
-
 For simpler use cases where session management isn't needed:
 
-```typescript
+```
 const app = express();
 app.use(express.json());
 
@@ -660,7 +603,6 @@ app.delete('/mcp', async (req: Request, res: Response) => {
   }));
 });
 
-
 // Start the server
 const PORT = 3000;
 setupServer().then(() => {
@@ -669,13 +611,12 @@ setupServer().then(() => {
       console.error('Failed to start server:', error);
       process.exit(1);
     }
-    console.log(`MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
+    console.log(\`MCP Stateless Streamable HTTP Server listening on port ${PORT}\`);
   });
 }).catch(error => {
   console.error('Failed to set up the server:', error);
   process.exit(1);
 });
-
 ```
 
 This stateless approach is useful for:
@@ -684,13 +625,11 @@ This stateless approach is useful for:
 - RESTful scenarios where each request is independent
 - Horizontally scaled deployments without shared session state
 
-#### DNS Rebinding Protection
-
 The Streamable HTTP transport includes DNS rebinding protection to prevent security vulnerabilities. By default, this protection is **disabled** for backwards compatibility.
 
 **Important**: If you are running this server locally, enable DNS rebinding protection:
 
-```typescript
+```
 const transport = new StreamableHTTPServerTransport({
   sessionIdGenerator: () => randomUUID(),
   enableDnsRebindingProtection: true,
@@ -700,8 +639,6 @@ const transport = new StreamableHTTPServerTransport({
 });
 ```
 
-### Testing and Debugging
-
 To test your server, you can use the [MCP Inspector](https://github.com/modelcontextprotocol/inspector). See its README for more information.
 
 ## Examples
@@ -710,7 +647,7 @@ To test your server, you can use the [MCP Inspector](https://github.com/modelcon
 
 A simple server demonstrating resources, tools, and prompts:
 
-```typescript
+```
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -729,7 +666,7 @@ server.registerResource(
   async (uri, { message }) => ({
     contents: [{
       uri: uri.href,
-      text: `Resource echo: ${message}`
+      text: \`Resource echo: ${message}\`
     }]
   })
 );
@@ -742,7 +679,7 @@ server.registerTool(
     inputSchema: { message: z.string() }
   },
   async ({ message }) => ({
-    content: [{ type: "text", text: `Tool echo: ${message}` }]
+    content: [{ type: "text", text: \`Tool echo: ${message}\` }]
   })
 );
 
@@ -758,7 +695,7 @@ server.registerPrompt(
       role: "user",
       content: {
         type: "text",
-        text: `Please process this message: ${message}`
+        text: \`Please process this message: ${message}\`
       }
     }]
   })
@@ -769,7 +706,7 @@ server.registerPrompt(
 
 A more complex example showing database integration:
 
-```typescript
+```
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import sqlite3 from "sqlite3";
 import { promisify } from "util";
@@ -837,7 +774,7 @@ server.registerTool(
       return {
         content: [{
           type: "text",
-          text: `Error: ${error.message}`
+          text: \`Error: ${error.message}\`
         }],
         isError: true
       };
@@ -852,9 +789,9 @@ server.registerTool(
 
 ### Dynamic Servers
 
-If you want to offer an initial set of tools/prompts/resources, but later add additional ones based on user action or external state change, you can add/update/remove them _after_ the Server is connected. This will automatically emit the corresponding `listChanged` notifications:
+If you want to offer an initial set of tools/prompts/resources, but later add additional ones based on user action or external state change, you can add/update/remove them *after* the Server is connected. This will automatically emit the corresponding `listChanged` notifications:
 
-```ts
+```
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -878,16 +815,16 @@ const putMessageTool = server.tool(
     content: [{ type: "text", text: await putMessage(channel, message) }]
   })
 );
-// Until we upgrade auth, `putMessage` is disabled (won't show up in listTools)
+// Until we upgrade auth, \`putMessage\` is disabled (won't show up in listTools)
 putMessageTool.disable()
 
 const upgradeAuthTool = server.tool(
   "upgradeAuth",
   { permission: z.enum(["write", "admin"])},
-  // Any mutations here will automatically emit `listChanged` notifications
+  // Any mutations here will automatically emit \`listChanged\` notifications
   async ({ permission }) => {
     const { ok, err, previous } = await upgradeAuthAndStoreToken(permission)
-    if (!ok) return {content: [{ type: "text", text: `Error: ${err}` }]}
+    if (!ok) return {content: [{ type: "text", text: \`Error: ${err}\` }]}
 
     // If we previously had read-only access, 'putMessage' is now available
     if (previous === "read") {
@@ -898,7 +835,7 @@ const upgradeAuthTool = server.tool(
       // If we've just upgraded to 'write' permissions, we can still call 'upgradeAuth'
       // but can only upgrade to 'admin'.
       upgradeAuthTool.update({
-        paramSchema: { permission: z.enum(["admin"]) }, // change validation rules
+        paramsSchema: { permission: z.enum(["admin"]) }, // change validation rules
       })
     } else {
       // If we're now an admin, we no longer have anywhere to upgrade to, so fully remove that tool
@@ -912,48 +849,17 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 ```
 
-### Improving Network Efficiency with Notification Debouncing
-
 When performing bulk updates that trigger notifications (e.g., enabling or disabling multiple tools in a loop), the SDK can send a large number of messages in a short period. To improve performance and reduce network traffic, you can enable notification debouncing.
 
 This feature coalesces multiple, rapid calls for the same notification type into a single message. For example, if you disable five tools in a row, only one `notifications/tools/list_changed` message will be sent instead of five.
 
-> [!IMPORTANT]
-> This feature is designed for "simple" notifications that do not carry unique data in their parameters. To prevent silent data loss, debouncing is **automatically bypassed** for any notification that contains a `params` object or a `relatedRequestId`. Such notifications will always be sent immediately.
-
 This is an opt-in feature configured during server initialization.
-
-```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-
-const server = new McpServer(
-  {
-    name: "efficient-server",
-    version: "1.0.0"
-  },
-  {
-    // Enable notification debouncing for specific methods
-    debouncedNotificationMethods: [
-      'notifications/tools/list_changed',
-      'notifications/resources/list_changed',
-      'notifications/prompts/list_changed'
-    ]
-  }
-);
-
-// Now, any rapid changes to tools, resources, or prompts will result
-// in a single, consolidated notification for each type.
-server.registerTool("tool1", ...).disable();
-server.registerTool("tool2", ...).disable();
-server.registerTool("tool3", ...).disable();
-// Only one 'notifications/tools/list_changed' is sent.
-```
 
 ### Low-Level Server
 
 For more control, you can use the low-level Server class directly:
 
-```typescript
+```
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -1007,11 +913,9 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 ```
 
-### Eliciting User Input
-
 MCP servers can request additional information from users through the elicitation feature. This is useful for interactive workflows where the server needs user input or confirmation:
 
-```typescript
+```
 // Server-side: Restaurant booking tool that asks for alternatives
 server.tool(
   "book-restaurant",
@@ -1027,7 +931,7 @@ server.tool(
     if (!available) {
       // Ask user if they want to try alternative dates
       const result = await server.server.elicitInput({
-        message: `No tables available at ${restaurant} on ${date}. Would you like to check alternative dates?`,
+        message: \`No tables available at ${restaurant} on ${date}. Would you like to check alternative dates?\`,
         requestedSchema: {
           type: "object",
           properties: {
@@ -1058,7 +962,7 @@ server.tool(
         return {
           content: [{
             type: "text",
-            text: `Found these alternatives: ${alternatives.join(", ")}`
+            text: \`Found these alternatives: ${alternatives.join(", ")}\`
           }]
         };
       }
@@ -1076,7 +980,7 @@ server.tool(
     return {
       content: [{
         type: "text",
-        text: `Booked table for ${partySize} at ${restaurant} on ${date}`
+        text: \`Booked table for ${partySize} at ${restaurant} on ${date}\`
       }]
     };
   }
@@ -1085,7 +989,7 @@ server.tool(
 
 Client-side: Handle elicitation requests
 
-```typescript
+```
 // This is a placeholder - implement based on your UI framework
 async function getInputFromUser(message: string, schema: any): Promise<{
   action: "accept" | "decline" | "cancel";
@@ -1110,11 +1014,9 @@ client.setRequestHandler(ElicitRequestSchema, async (request) => {
 
 **Note**: Elicitation requires client support. Clients must declare the `elicitation` capability during initialization.
 
-### Writing MCP Clients
-
 The SDK provides a high-level client interface:
 
-```typescript
+```
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -1158,14 +1060,11 @@ const result = await client.callTool({
     arg1: "value"
   }
 });
-
 ```
-
-### Proxy Authorization Requests Upstream
 
 You can proxy OAuth requests to an external authorization provider:
 
-```typescript
+```
 import express from 'express';
 import { ProxyOAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/providers/proxyProvider.js';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
@@ -1217,7 +1116,7 @@ Clients and servers with StreamableHttp transport can maintain [backwards compat
 
 For clients that need to work with both Streamable HTTP and older SSE servers:
 
-```typescript
+```
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -1250,7 +1149,7 @@ try {
 
 For servers that need to support both Streamable HTTP and older clients:
 
-```typescript
+```
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -1310,14 +1209,29 @@ app.listen(3000);
 
 ## Documentation
 
-- [Model Context Protocol documentation](https://modelcontextprotocol.io)
-- [MCP Specification](https://spec.modelcontextprotocol.io)
+- [Model Context Protocol documentation](https://modelcontextprotocol.io/)
+- [MCP Specification](https://spec.modelcontextprotocol.io/)
 - [Example Servers](https://github.com/modelcontextprotocol/servers)
 
 ## Contributing
 
-Issues and pull requests are welcome on GitHub at <https://github.com/modelcontextprotocol/typescript-sdk>.
+Issues and pull requests are welcome on GitHub at [https://github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk).
 
 ## License
 
-This project is licensed under the MIT License—see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License—see the [LICENSE](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE) file for details.
+
+## Releases 53
+
+[\+ 52 releases](https://github.com/modelcontextprotocol/typescript-sdk/releases)
+
+## Deployments 54
+
+- [release](https://github.com/modelcontextprotocol/typescript-sdk/deployments/release)
+
+[\+ 53 deployments](https://github.com/modelcontextprotocol/typescript-sdk/deployments)
+
+## Languages
+
+- [TypeScript 98.6%](https://github.com/modelcontextprotocol/typescript-sdk/search?l=typescript)
+- [JavaScript 1.4%](https://github.com/modelcontextprotocol/typescript-sdk/search?l=javascript)
