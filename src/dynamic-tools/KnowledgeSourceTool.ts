@@ -463,7 +463,7 @@ export class KnowledgeSourceTool extends DynamicTool {
           name: params.sourceName,
           urlCount: params.urls.length,
           crawlDepth: params.crawlDepth,
-          schedule: params.schedule
+          crawlDepth: params.crawlDepth
         });
 
         return {
