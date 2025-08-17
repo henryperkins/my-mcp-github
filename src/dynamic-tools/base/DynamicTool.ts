@@ -541,7 +541,7 @@ export abstract class DynamicTool {
             if (notifier) {
               notifier("notifications/message", {
                 level,
-                logger: this.toolName,
+                logger: toolName,
                 data: { message, ...(data ?? {}), timestamp: new Date().toISOString() }
               });
             }
