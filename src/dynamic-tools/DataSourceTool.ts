@@ -11,11 +11,17 @@ export class DataSourceTool extends DynamicTool {
     list: {
       description: "List all data source connection names",
       category: 'read',
-      params: z.object({}),
-      examples: [],
+      params: z.object({
+        select: z.string().optional()
+          .describe("Use OData $select to reduce payload (e.g., 'name,type,container')")
+      }),
+      examples: [
+        {},
+        { select: "name,type,container" }
+      ],
       handler: async (client, params, context, helpers) => {
         const dataSources = await helpers.withTimeout(
-          client.listDataSources(),
+          client.listDataSources(params.select),
           undefined,
           "listDataSources"
         );
@@ -302,7 +308,7 @@ export class DataSourceTool extends DynamicTool {
           type: "azuresql",
           description: params.description,
           credentials: { connectionString: params.connectionString },
-          container: { 
+          container: {
             name: params.tableName,
             query: params.query || null
           }
@@ -349,7 +355,7 @@ export class DataSourceTool extends DynamicTool {
           message: `SQL data source '${params.name}' created successfully`,
           dataSource: result,
           tips: [
-            params.changeDetectionPolicy === "sql-integrated" 
+            params.changeDetectionPolicy === "sql-integrated"
               ? "Ensure SQL change tracking is enabled on the table"
               : "Ensure the high watermark column is indexed for performance"
           ]
@@ -388,7 +394,7 @@ export class DataSourceTool extends DynamicTool {
           type: "cosmosdb",
           description: params.description,
           credentials: { connectionString: params.connectionString },
-          container: { 
+          container: {
             name: params.containerName,
             query: params.query || (params.useChangeDetection ? "SELECT * FROM c WHERE c._ts > @HighWaterMark" : null)
           }
@@ -497,7 +503,7 @@ export class DataSourceTool extends DynamicTool {
           type: "adlsgen2",
           description: params.description,
           credentials: { connectionString },
-          container: { 
+          container: {
             name: params.fileSystem,
             query: params.folderPath ? `folder_path = '${params.folderPath}'` : null
           },
@@ -548,7 +554,7 @@ export class DataSourceTool extends DynamicTool {
       category: 'write',
       params: z.object({
         name: z.string().describe("Data source name"),
-        type: z.enum(["azureblob", "azuresql", "cosmosdb", "adlsgen2", "azuretable", "mysql", "postgresql"])
+        type: z.enum(["azureblob", "azuresql", "cosmosdb", "azuretable", "mysql", "adlsgen2", "onelake"])
           .describe("Data source type"),
         credentials: z.object({
           connectionString: z.string()
@@ -714,7 +720,7 @@ export class DataSourceTool extends DynamicTool {
       }),
       handler: async (params: any, _context: ToolContext) => {
         let recommendation: any;
-        
+
         if (params.sourceType === "unsure") {
           recommendation = DataSourceTool.recommendSourceType(params.purpose);
         } else {
@@ -746,7 +752,7 @@ export class DataSourceTool extends DynamicTool {
       }),
       handler: async (params: any, _context: ToolContext) => {
         const comparison = DataSourceTool.compareDataSourceTypes(params.useCase);
-        
+
         return {
           messages: [
             {
@@ -843,7 +849,7 @@ export class DataSourceTool extends DynamicTool {
     };
 
     const config = configs[sourceType] || configs.blob;
-    
+
     return {
       text: `## Configuration for ${sourceType.toUpperCase()} Data Source\n\n**Purpose**: ${purpose}\n**Update Frequency**: ${updateFrequency}\n\n### Recommended Configuration:\n\`\`\`json\n${JSON.stringify(config.params, null, 2)}\n\`\`\`\n\n### Tips:\n${config.tips.filter((t: string) => t).map((t: string) => `- ${t}`).join('\n')}\n\n### Next Steps:\n1. Use \`DataSourceManagement.${config.operation}\` with the above configuration\n2. Create an indexer to start ingesting data\n3. Monitor indexing status and adjust settings as needed`
     };

@@ -392,6 +392,154 @@ export class IndexTool extends DynamicTool {
           formattedSize: helpers.formatBytes(stats.storageSize)
         };
       }
+    },
+    // Alias operations
+    aliasList: {
+      description: "List all index aliases",
+      category: 'read',
+      params: z.object({}),
+      examples: [],
+      handler: async (client, _params, _context, helpers) => {
+        const aliases = (await helpers.withTimeout(
+          client.listAliases(),
+          undefined,
+          "listAliases"
+        )) as Array<any>;
+
+        return {
+          aliases: (aliases || []).map((a: any) => ({ name: a.name, indexes: a.indexes })),
+          count: (aliases || []).length
+        };
+      }
+    },
+
+    aliasGet: {
+      description: "Get a specific index alias",
+      category: 'read',
+      params: z.object({
+        aliasName: z.string().min(1).max(128)
+      }),
+      examples: [{ aliasName: "search-live" }],
+      handler: async (client, params, _context, helpers) => {
+        const alias = await helpers.withTimeout(
+          client.getAlias(params.aliasName),
+          undefined,
+          `getAlias:${params.aliasName}`
+        );
+        return alias;
+      }
+    },
+
+    aliasCreate: {
+      description: "Create a new index alias",
+      category: 'write',
+      params: z.object({
+        aliasName: z.string().min(1).max(128),
+        indexName: z.string().min(1).max(128)
+      }),
+      examples: [
+        { aliasName: "search-live", indexName: "products-v2" }
+      ],
+      handler: async (client, params, _context, helpers) => {
+        // API expects body { name, indexes: [string] }
+        const result = await helpers.withTimeout(
+          client.createAlias({ name: params.aliasName, indexes: [params.indexName] }),
+          undefined,
+          `createAlias:${params.aliasName}`
+        );
+
+        helpers.notify("tools/alias_created", {
+          aliasName: params.aliasName,
+          indexName: params.indexName
+        });
+
+        helpers.notifyResourceUpdated("aliases");
+        helpers.notifyResourceUpdated(`aliases/${params.aliasName}`);
+
+        return {
+          success: true,
+          message: `Alias '${params.aliasName}' created for index '${params.indexName}'`,
+          alias: result
+        };
+      }
+    },
+
+    aliasUpdate: {
+      description: "Update an existing index alias to point to a different index",
+      category: 'write',
+      params: z.object({
+        aliasName: z.string().min(1).max(128),
+        indexName: z.string().min(1).max(128),
+        ifMatch: z.string().optional(),
+        ifNoneMatch: z.string().optional()
+      }),
+      examples: [
+        { aliasName: "search-live", indexName: "products-v3" }
+      ],
+      handler: async (client, params, _context, helpers) => {
+        const result = await helpers.withTimeout(
+          client.createOrUpdateAlias(params.aliasName, { indexes: [params.indexName] }, {
+            ifMatch: params.ifMatch,
+            ifNoneMatch: params.ifNoneMatch
+          }),
+          undefined,
+          `updateAlias:${params.aliasName}`
+        );
+
+        helpers.notify("tools/alias_updated", {
+          aliasName: params.aliasName,
+          indexName: params.indexName
+        });
+
+        helpers.notifyResourceUpdated("aliases");
+        helpers.notifyResourceUpdated(`aliases/${params.aliasName}`);
+
+        return {
+          success: true,
+          message: `Alias '${params.aliasName}' now points to index '${params.indexName}'`,
+          alias: result
+        };
+      }
+    },
+
+    aliasDelete: {
+      description: "Delete an index alias",
+      category: 'delete',
+      requiresConfirmation: true,
+      params: z.object({
+        aliasName: z.string().min(1).max(128),
+        confirmation: z.literal("DELETE").optional()
+      }),
+      examples: [
+        { aliasName: "old-alias", confirmation: "DELETE" }
+      ],
+      handler: async (client, params, _context, helpers) => {
+        if (params.confirmation !== "DELETE") {
+          const resp = await helpers.elicit({
+            message: `⚠️ This will delete alias '${params.aliasName}'. Type 'DELETE' to confirm.`,
+            inputType: 'text',
+            validation: (input: string) => input === "DELETE" ? null : "Please type 'DELETE' to confirm",
+            timeout: 10000
+          });
+          if (resp?.text !== "DELETE") throw new Error("Delete operation cancelled");
+        }
+
+        await helpers.withTimeout(
+          client.deleteAlias(params.aliasName),
+          undefined,
+          `deleteAlias:${params.aliasName}`
+        );
+
+        helpers.notify("tools/alias_deleted", {
+          aliasName: params.aliasName,
+          timestamp: new Date().toISOString()
+        });
+
+        helpers.notifyResourceUpdated("aliases");
+        helpers.notifyResourceUpdated(`aliases/${params.aliasName}`);
+
+        return { success: true, message: `Alias '${params.aliasName}' deleted` };
+      }
     }
   };
 

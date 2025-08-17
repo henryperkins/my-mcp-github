@@ -17,6 +17,15 @@ import { ServiceTool } from "./dynamic-tools/ServiceTool";
 import { registerPrompts } from "./dynamic-tools/prompts";
 import { registerAdvancedPrompts } from "./dynamic-tools/prompts/advanced";
 
+// Add below imports
+const addCors = (r: Response) => {
+  const h = new Headers(r.headers);
+  h.set("Access-Control-Allow-Origin", "*");
+  h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
+};
+
 class AzureSearchMCPDynamic extends McpAgent {
   server = new McpServer({
     name: "azure-ai-search-mcp-dynamic",
@@ -131,11 +140,15 @@ class AzureSearchMCPDynamic extends McpAgent {
   }
 }
 
-export { AzureSearchMCPDynamic };
+// Create handlers for both transport methods
+const sseHandler = AzureSearchMCPDynamic.serveSSE("/sse", { binding: "MCP_OBJECT" });
+const mcpHandler = AzureSearchMCPDynamic.serve("/mcp", { binding: "MCP_OBJECT" });
 
 export default {
-  fetch(request: Request, envIn: unknown, ctx: ExecutionContext) {
+  async fetch(request: Request, envIn: unknown, ctx: ExecutionContext) {
     const { pathname } = new URL(request.url);
+    
+    // Handle CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -146,12 +159,18 @@ export default {
         }
       });
     }
+    
+    // Route to SSE handler
     if (pathname.startsWith("/sse")) {
-      return AzureSearchMCPDynamic.serveSSE("/sse").fetch(request, envIn as any, ctx);
+      return addCors(await sseHandler.fetch(request, envIn as any, ctx));
     }
+    
+    // Route to Streamable HTTP handler
     if (pathname.startsWith("/mcp")) {
-      return AzureSearchMCPDynamic.serve("/mcp").fetch(request, envIn as any, ctx);
+      return addCors(await mcpHandler.fetch(request, envIn as any, ctx));
     }
+    
+    // Default response for root path
     return new Response("Azure AI Search MCP (dynamic) - Use /sse or /mcp", {
       status: 200,
       headers: {
@@ -161,3 +180,9 @@ export default {
     });
   }
 };
+
+// Export the Durable Object class
+export { AzureSearchMCPDynamic };
+
+// Also export as AzureSearchMCP for backward compatibility
+export { AzureSearchMCPDynamic as AzureSearchMCP };
