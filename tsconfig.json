@@ -35,6 +35,8 @@
         "allowSyntheticDefaultImports": true,
         /* Ensure that casing is correct in imports. */
         "forceConsistentCasingInFileNames": true,
+        /* Enable downlevel iteration for iterators */
+        "downlevelIteration": true,
 
         /* Enable all strict type-checking options. */
         "strict": true,

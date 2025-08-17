@@ -1,30 +1,70 @@
 ### **[[Search Documentation/Indexes|Indexes]]**
 **Created**: 2025-08-11
-**Modified**: 2025-08-11
-**Tags**: `#azure-ai-search`, `#rest-api`, `#indexes`
+**Modified**: 2025-08-17
+**Tags**: `#azure-ai-search`, `#rest-api`, `#indexes`, `#mcp-tools`
 
 ---
 
 ### **What This Covers**
-This note provides a **comprehensive guide** to managing **Azure AI Search indexes** via REST API, including:
+This note provides a **comprehensive guide** to managing **Azure AI Search indexes** via the MCP server tools, including:
 - **CRUD operations**: Create, update, delete, get, and list indexes.
-- **Utilities**: Get index statistics, test analyzers.
+- **Template-based creation**: Pre-built templates for common scenarios.
+- **Smart updates**: Add fields without full redefinition.
+- **Vector & Semantic Search**: Full support for AI-powered search.
+- **Utilities**: Get index statistics, pagination, validation.
 - **Best practices**: Concurrency control, downtime handling, and vector search configurations.
 
 ---
 
-### **Endpoints**
-| **Operation**        | **Endpoint**                             | **HTTP Method** |
-| -------------------- | ---------------------------------------- | --------------- |
-| Create Index         | `/indexes`                               | `POST`          |
-| List Indexes         | `/indexes`                               | `GET`           |
-| Get Index            | `/indexes('{indexName}')`                | `GET`           |
-| Update Index         | `/indexes('{indexName}')`                | `PUT`           |
-| Delete Index         | `/indexes('{indexName}')`                | `DELETE`        |
-| Get Index Statistics | `/indexes('{indexName}')/search.stats`   | `GET`           |
-| Test Analyzer        | `/indexes('{indexName}')/search.analyze` | `POST`          |
+### **MCP Tools Available**
+| **Tool**                  | **Description**                                                              |
+| ------------------------- | ---------------------------------------------------------------------------- |
+| `listIndexes`             | List all indexes with optional stats and full definitions                   |
+| `getIndex`                | Fetch full index definition with fields, analyzers, etc.                    |
+| `getIndexStats`           | Get document count and storage usage for an index                           |
+| `createIndex`             | Create new index with templates or custom definition                        |
+| `createOrUpdateIndex`     | Smart update with field addition and semantic config                        |
+| `deleteIndex`             | Delete index and all its documents (requires confirmation)                  |
+| `listIndexesPaginated`    | List indexes with cursor-based pagination                                   |
+| `analyzeText`             | Test how text is tokenized by analyzers (debugging tool)                   |
 
 ---
+
+### **Tool Features & Enhancements**
+
+#### **Template-Based Index Creation**
+The `createIndex` tool supports pre-built templates:
+- **`documentSearch`**: General document search with text analysis
+- **`productCatalog`**: E-commerce product search with faceting
+- **`hybridSearch`**: Combined keyword and vector search
+- **`knowledgeBase`**: Q&A and semantic search optimized
+
+#### **Smart Field Addition**
+The `createOrUpdateIndex` tool allows adding fields without full redefinition:
+```json
+{
+  "indexName": "my-index",
+  "addFields": [
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "filterable": true,
+      "facetable": true
+    }
+  ]
+}
+```
+
+#### **Automatic Language Detection**
+Both create tools support automatic analyzer selection based on language:
+- English, Spanish, French, German, Italian, Portuguese
+- Japanese, Chinese, Korean, Arabic, and more
+
+#### **Enhanced Statistics**
+The `listIndexes` tool intelligently handles statistics:
+- Uses aggregate `/indexstats` endpoint for performance
+- Falls back to per-index stats with concurrency control
+- Configurable timeouts to prevent hangs
 
 ### **Key Tips**
 1. **Downtime Handling**:
@@ -128,8 +168,87 @@ This note provides a **comprehensive guide** to managing **Azure AI Search index
 
 ---
 
-### **cURL Examples**
-#### **1. Create an Index**
+### **MCP Tool Examples**
+
+#### **1. Create Index from Template**
+```json
+// Using createIndex tool
+{
+  "indexName": "products",
+  "template": "productCatalog",
+  "language": "english",
+  "vectorDimensions": 1536
+}
+```
+
+#### **2. Clone Existing Index**
+```json
+// Using createIndex tool
+{
+  "indexName": "products-v2",
+  "cloneFrom": "products",
+  "validate": true
+}
+```
+
+#### **3. Add Fields to Existing Index**
+```json
+// Using createOrUpdateIndex tool
+{
+  "indexName": "products",
+  "addFields": [
+    {
+      "name": "brand",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "facetable": true
+    },
+    {
+      "name": "price",
+      "type": "Edm.Double",
+      "filterable": true,
+      "sortable": true
+    }
+  ],
+  "mergeWithExisting": true
+}
+```
+
+#### **4. Update Semantic Configuration**
+```json
+// Using createOrUpdateIndex tool
+{
+  "indexName": "documents",
+  "updateSemanticConfig": {
+    "titleField": "title",
+    "contentFields": ["content", "summary"],
+    "keywordFields": ["tags", "category"]
+  }
+}
+```
+
+#### **5. List Indexes with Stats**
+```json
+// Using listIndexes tool
+{
+  "includeStats": true,
+  "verbose": false
+}
+```
+
+#### **6. Test Text Analysis**
+```json
+// Using analyzeText tool
+{
+  "indexName": "my-index",
+  "text": "The quick brown fox",
+  "analyzer": "en.microsoft"
+}
+```
+
+### **Legacy cURL Examples**
+#### **1. Create an Index (Direct REST API)**
 ```bash
 curl -X POST "https://[your-service].search.windows.net/indexes?api-version=2025-08-01-preview" \
   -H "Content-Type: application/json" \
@@ -244,11 +363,32 @@ curl -X POST "https://[your-service].search.windows.net/indexes('my-index')/sear
 
 ---
 
+### **Safety Features**
+
+#### **Destructive Operation Protection**
+The `deleteIndex` tool requires explicit confirmation:
+- Implements elicitation for user confirmation
+- Falls back to parameter-based confirmation
+- Prevents accidental deletions
+
+#### **Validation & Error Handling**
+- All create/update operations validate schemas
+- Smart conflict detection for field changes
+- Detailed error messages with remediation steps
+
+#### **Performance Optimizations**
+- Automatic response truncation for large payloads
+- Intelligent summarization using Azure OpenAI
+- Configurable pagination limits
+- Timeout protection for long-running operations
+
 ### **Related Notes**
 - [[Indexers]] (for data ingestion pipelines)
 - [[DataSources]] (for connecting to Azure Blob, SQL, etc.)
 - [[Skillsets]] (for AI enrichment)
-- [[SearchService_Utilities]] (for service-level operations)
+- [[Knowledge-Agents]] (for intelligent Q&A)
+- [[Knowledge-Sources]] (for data ingestion)
+- [[Service-Operations]] (for service-level management)
 
 ---
 **Sources**:
