@@ -503,7 +503,7 @@ export abstract class DynamicTool {
               const notifier = (context.agent as any)?.server?.notification ||
                              (context.agent as any)?.notification;
               if (notifier) {
-                notifier(`${this.toolName}:batch`, {
+                notifier(`${toolName}:batch`, {
                   operation,
                   current: batchNumber,
                   total: totalBatches,
