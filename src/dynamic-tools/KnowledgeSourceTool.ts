@@ -364,7 +364,7 @@ export class KnowledgeSourceTool extends DynamicTool {
         helpers.notify("tools/blob_knowledge_source_created", {
           name: params.sourceName,
           container: params.containerName,
-          schedule: params.schedule
+          schedule: params.freshness
         });
 
         return {
