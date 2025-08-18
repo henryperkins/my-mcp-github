@@ -1,4 +1,4 @@
-// src/index.ts
+ // src/index.ts
 // This file now redirects to the dynamic tools implementation
 // The legacy tool architecture has been replaced with dynamic tools for better performance
 
@@ -7,6 +7,7 @@ export { AzureSearchMCPDynamic } from "./index-dynamic";
 
 // Export aliases
 export { AzureSearchMCPDynamic as AzureSearchMCP } from "./index-dynamic";
+export { AzureSearchMCPDynamic as AzureSearchMCPSQLite } from "./index-dynamic";
 
 // Export the default handler with fetch
 import defaultHandler from "./index-dynamic";

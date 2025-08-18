@@ -153,9 +153,9 @@ Available templates:
         queryBuilder += `- Multiple: orderBy: 'rating desc, price asc'\n`;
       }
 
-      queryBuilder += `\nOptional parameters:\n`;
-      queryBuilder += `- top: 10 (number of results, max 50)\n`;
-      queryBuilder += `- skip: 0 (for pagination)\n`;
+      queryBuilder += `\nOptional pagination (cursor-based):\n`;
+      queryBuilder += `- pageSize: 10 (number of results per page)\n`;
+      queryBuilder += `- cursor: '<opaque string from previous response.nextCursor>'\n`;
       queryBuilder += `- select: ['field1', 'field2'] (specific fields to return)\n`;
       queryBuilder += `- includeTotalCount: true (get total matching documents)\n`;
 

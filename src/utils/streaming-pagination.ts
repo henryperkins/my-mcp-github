@@ -3,12 +3,73 @@
  * Efficient streaming pagination utilities that avoid loading all data into memory
  */
 
-// Cursor encoding/decoding utilities
-const encodeCursor = (o: any) =>
-  Buffer.from(JSON.stringify(o)).toString("base64");
+// Unicode-safe cursor encoding/decoding utilities using URL-safe base64
+function toBase64(input: string): string {
+  // Use TextEncoder for proper Unicode handling
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(input);
+  
+  // Convert to base64 using web-safe method
+  if (typeof btoa === 'function') {
+    // Convert bytes to binary string
+    const binary = String.fromCharCode(...bytes);
+    // Use URL-safe base64 (replace +/= with -_)
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+  
+  // Fallback to Buffer if available (Node.js/Workers environment)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const B: any = (globalThis as any).Buffer;
+  if (B?.from) {
+    return B.from(bytes).toString('base64url');
+  }
+  
+  throw new Error('Base64 encoding not supported in this environment');
+}
 
-const decodeCursor = (c?: string) =>
-  c ? JSON.parse(Buffer.from(c, "base64").toString()) : {};
+function fromBase64(b64: string): string {
+  // Add padding if needed for URL-safe base64
+  const padded = b64.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = (4 - (padded.length % 4)) % 4;
+  const fullB64 = padded + '='.repeat(padding);
+  
+  if (typeof atob === 'function') {
+    // Decode base64 to binary string
+    const binary = atob(fullB64);
+    // Convert binary string to bytes
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    // Use TextDecoder for proper Unicode handling
+    const decoder = new TextDecoder();
+    return decoder.decode(bytes);
+  }
+  
+  // Fallback to Buffer if available
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const B: any = (globalThis as any).Buffer;
+  if (B?.from) {
+    return B.from(fullB64, 'base64').toString('utf-8');
+  }
+  
+  throw new Error('Base64 decoding not supported in this environment');
+}
+
+const encodeCursor = (o: any) => toBase64(JSON.stringify(o));
+
+const decodeCursor = (c?: string) => {
+  if (c === undefined) return {};
+  if (typeof c !== "string" || c.trim().length === 0) {
+    throw new Error("Invalid cursor: empty");
+  }
+  try {
+    const decoded = fromBase64(c);
+    return JSON.parse(decoded);
+  } catch {
+    throw new Error("Invalid cursor: malformed");
+  }
+};
 
 export interface PaginationOptions {
   pageSize: number;
@@ -18,7 +79,6 @@ export interface PaginationOptions {
 export interface PaginatedResponse<T> {
   items: T[];
   nextCursor?: string;
-  hasMore: boolean;
   totalCount?: number;
 }
 
@@ -42,7 +102,6 @@ export function paginateArray<T>(
     // Return empty result if offset is beyond array bounds
     return {
       items: [],
-      hasMore: false,
       totalCount: items.length
     };
   }
@@ -54,7 +113,6 @@ export function paginateArray<T>(
 
   const result: PaginatedResponse<T> = {
     items: slice,
-    hasMore,
     totalCount: items.length
   };
 
@@ -84,16 +142,19 @@ export async function streamPaginate<T>(
 
   // Fetch only the required page
   const result = await fetchFn(offset, pageSize);
-  const hasMore = result.value.length === pageSize;
+  
+  // Fix: Use count when available for accurate hasMore calculation
+  const hasMore = result.count !== undefined 
+    ? (offset + result.value.length) < result.count
+    : result.value.length === pageSize;
 
   const response: PaginatedResponse<T> = {
     items: result.value,
-    hasMore,
     totalCount: result.count
   };
 
   if (hasMore) {
-    response.nextCursor = encodeCursor({ offset: offset + pageSize });
+    response.nextCursor = encodeCursor({ offset: offset + result.value.length });
   }
 
   return response;

@@ -493,6 +493,7 @@ export class IndexerTool extends DynamicTool {
           status: "started",
           timestamp: new Date().toISOString()
         });
+        helpers.progress({ progress: 0, total: 100, message: "Indexer started" });
 
         let done = false;
         let attempts = 0;
@@ -527,11 +528,13 @@ export class IndexerTool extends DynamicTool {
 
           progressUpdates.push(progressUpdate);
 
-          // Emit progress notification
+          // Emit progress notification (custom + spec progress)
           helpers.notify("tools/indexer_progress", {
             indexerName: params.indexerName,
             ...progressUpdate
           });
+          const pct = Math.min(99, Math.floor((progressUpdate.totalProcessed || 0) % 100));
+          helpers.progress({ progress: pct, total: 100, status: progressUpdate.status });
 
           // Check if done
           if (currentStatus === "success" || currentStatus === "transientFailure" || currentStatus === "reset") {
@@ -556,6 +559,7 @@ export class IndexerTool extends DynamicTool {
             ? new Date(lastResult.endTime).getTime() - new Date(lastResult.startTime).getTime()
             : undefined
         });
+        helpers.progress({ progress: 100, total: 100, status: lastResult?.status || "complete" });
 
         // Emit resource updates
         helpers.notifyResourceUpdated("indexers");

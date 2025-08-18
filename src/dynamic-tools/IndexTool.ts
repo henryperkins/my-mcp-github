@@ -22,7 +22,7 @@ export class IndexTool extends DynamicTool {
         includeStats: z.boolean().optional().describe("Include document count and storage size"),
         verbose: z.boolean().optional().describe("Include full index definitions"),
         pageSize: z.number().max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE).optional(),
-        cursor: z.string().optional().describe("Pagination cursor from previous response")
+        cursor: z.string().min(1).optional().describe("Opaque pagination cursor from previous response")
       }),
       examples: [
         { includeStats: true, pageSize: 10 },
@@ -85,14 +85,12 @@ export class IndexTool extends DynamicTool {
             // Log pagination info
             helpers.notify("tools/index_list", {
               totalCount: paginated.totalCount,
-              pageSize: params.pageSize,
-              hasMore: paginated.hasMore
+              pageSize: params.pageSize
             });
 
             return {
               indexes: paginated.items,
               totalCount: paginated.totalCount,
-              hasMore: paginated.hasMore,
               nextCursor: paginated.nextCursor
             };
           }
