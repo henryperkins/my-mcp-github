@@ -25,19 +25,23 @@
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_classes": ["AzureSearchMCP"]
+			"new_sqlite_classes": ["AzureSearchMCP"]
 		},
 		{
 			"tag": "v2",
 			"renamed_classes": [
 				{ "from": "AzureSearchMCP", "to": "AzureSearchMCPDynamic" }
 			]
+		},
+		{
+			"tag": "v3",
+			"new_sqlite_classes": ["AzureSearchMCPSQLite"]
 		}
 	],
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "AzureSearchMCPDynamic",
+				"class_name": "AzureSearchMCPSQLite",
 				"name": "MCP_OBJECT"
 			}
 		]

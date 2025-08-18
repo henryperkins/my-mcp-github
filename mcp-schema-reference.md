@@ -1,3 +1,7 @@
+Here's the schema reference formatted in Markdown while preserving the exact content:
+
+---
+
 # Schema Reference
 
 ## Common Types
@@ -1548,3 +1552,5 @@ The server's response to a tools/list request from the client.
 - **`_meta`** (Optional): See [General fields: `_meta`](#meta) for notes on `_meta` usage.
 - **`nextCursor`** (Optional): An opaque token representing the pagination position after the last returned result. If present, there may be more results available.
 - **`tools`**: The list of tools.
+
+---

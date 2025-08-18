@@ -44,6 +44,7 @@ export interface OperationHelpers {
   paginate: (items: any[], options: { pageSize?: number; cursor?: string }) => any;
   elicit: (options: ElicitationOptions) => Promise<any>;
   notify: (event: string, data: any) => void;
+  progress: (update: { progress?: number; total?: number; message?: string; [k: string]: any }) => void;
   formatBytes: (bytes: number) => string;
   processBatch: <T>(items: T[], batchSize: number, processor: (batch: T[]) => Promise<any>) => Promise<any>;
   validateRequired: (params: any, required: string[]) => void;
@@ -187,12 +188,14 @@ export abstract class DynamicTool {
       paramSchema as any,
       {
         annotations,
-        examples,
-        hints,
-        metadata: {
-          version: "2.0.0",
-          dynamic: true,
-          operationCount: Object.keys(this.operations).length
+        _meta: {
+          examples,
+          hints,
+          metadata: {
+            version: "2.0.0",
+            dynamic: true,
+            operationCount: Object.keys(this.operations).length
+          }
         }
       },
       async (input: any) => {
@@ -234,8 +237,9 @@ export abstract class DynamicTool {
             });
           }
 
-          // Create operation helpers
-          const helpers = this.createHelpers(context, operation, enableLogging);
+          // Create operation helpers, threading progress token if provided by client
+          const progressToken = (input as any)?._meta?.progressToken;
+          const helpers = this.createHelpers(context, operation, enableLogging, progressToken);
 
           // Log operation start
           if (enableLogging) {
@@ -348,7 +352,8 @@ export abstract class DynamicTool {
   protected static createHelpers(
     context: ToolContext,
     operation: string,
-    enableLogging: boolean
+    enableLogging: boolean,
+    progressToken?: string
   ): OperationHelpers {
     return {
       withTimeout: (promise, timeoutMs, op) =>
@@ -436,6 +441,18 @@ export abstract class DynamicTool {
           } catch {
             // Ignore notification errors
           }
+        }
+      },
+      progress: (update) => {
+        if (!progressToken) return;
+        try {
+          const notifier = (context.agent as any)?.server?.notification ||
+                         (context.agent as any)?.notification;
+          if (notifier) {
+            notifier("notifications/progress", { progressToken, ...update });
+          }
+        } catch {
+          // Ignore notification errors
         }
       },
       notifyResourceUpdated: (uri: string) => {

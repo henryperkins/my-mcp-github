@@ -134,11 +134,11 @@ export async function formatResponse(
     if (Array.isArray(data)) {
       const payload = {
         message:
-          "Response truncated due to size. Use pagination parameters (skip/top) to retrieve data in chunks.",
+          "Response truncated due to size. Use cursor-based pagination to retrieve data in chunks.",
         totalItems: data.length,
         truncated: true,
         firstItems: data.slice(0, 10),
-        recommendation: "Use skip and top parameters to paginate through results",
+        recommendation: "Use nextCursor from responses and pass it back as cursor to continue",
       };
       return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
     }

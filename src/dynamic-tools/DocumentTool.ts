@@ -16,7 +16,7 @@ export class DocumentTool extends DynamicTool {
 
   static readonly operations: Record<string, OperationDefinition> = {
     search: {
-      description: "Search documents with filters, sorting, and pagination",
+      description: "Search documents with filters, sorting, pagination, and optional vector search",
       category: 'read',
       supportsPagination: true,
       params: z.object({
@@ -24,8 +24,18 @@ export class DocumentTool extends DynamicTool {
         search: z.string().default("*").describe("Search query (* for all)"),
         filter: z.string().optional().describe("OData filter expression"),
         orderBy: z.string().optional().describe("Sort order (e.g., 'price desc')"),
-        top: z.number().max(MAX_SEARCH_RESULTS).default(DEFAULT_SEARCH_RESULTS),
-        skip: z.number().default(0).describe("Skip N results for pagination"),
+        // Vector search support for hybrid search
+        vectors: z.array(z.object({
+          value: z.array(z.number()).describe("Vector embedding values"),
+          fields: z.string().describe("Vector field name"),
+          k: z.number().optional().default(10).describe("Number of nearest neighbors")
+        })).optional().describe("Vector search queries for hybrid search"),
+        // Deprecated: prefer cursor-based pagination
+        top: z.number().max(MAX_SEARCH_RESULTS).default(DEFAULT_SEARCH_RESULTS).optional(),
+        skip: z.number().optional().describe("Deprecated: use cursor instead"),
+        // Unified cursor pagination
+        pageSize: z.number().max(MAX_SEARCH_RESULTS).default(DEFAULT_SEARCH_RESULTS).optional(),
+        cursor: z.string().min(1).optional().describe("Opaque pagination cursor from previous response"),
         select: z.array(z.string()).optional().describe("Fields to return"),
         includeTotalCount: z.boolean().optional(),
         facets: z.array(z.string()).optional().describe("Fields to get facet counts")
@@ -46,17 +56,22 @@ export class DocumentTool extends DynamicTool {
         }
       ],
       handler: async (client, params, context, helpers) => {
-        // Build search request with Azure Search body mapping
-        const searchRequest = {
+        // Build base search request (skip/top added by pagination path)
+        const baseSearchRequest = {
           search: params.search,
-          top: params.top,
-          skip: params.skip,
           filter: params.filter,
-          orderby: params.orderBy, // Note: Azure Search uses 'orderby' not 'orderBy'
+          orderby: params.orderBy, // Azure Search uses 'orderby'
           select: params.select?.join(','),
           count: params.includeTotalCount,
-          facets: params.facets
-        };
+          facets: params.facets,
+          // Add vector queries if provided for hybrid search
+          vectorQueries: params.vectors?.map((v: any) => ({
+            kind: "vector",
+            vector: v.value,
+            fields: v.fields,
+            k: v.k || 10
+          }))
+        } as Record<string, any>;
 
         // Log search intent
         helpers.notify("tools/search_initiated", {
@@ -67,25 +82,50 @@ export class DocumentTool extends DynamicTool {
         });
 
         try {
-          const results: any = await helpers.withTimeout(
-            client.searchDocuments(params.indexName, searchRequest),
-            DEFAULT_TIMEOUT_MS,
-            "searchDocuments"
-          );
+          let response: any;
 
-          // Format results with pagination info
-          const response: any = {
-            results: results.value || results,
-            count: results.value?.length || results.length
-          };
+          // Cursor-based pagination path
+          if (params.pageSize || params.cursor) {
+            const { streamPaginate } = await import("../utils/streaming-pagination");
+            const pageSize = params.pageSize || DEFAULT_SEARCH_RESULTS;
+            const page = await streamPaginate<any>(
+              async (skip: number, top: number) => {
+                const req = { ...baseSearchRequest, top, skip };
+                const res: any = await helpers.withTimeout(
+                  client.searchDocuments(params.indexName, req),
+                  DEFAULT_TIMEOUT_MS,
+                  "searchDocuments"
+                );
+                return { value: res.value || [], count: res['@odata.count'] };
+              },
+              { pageSize, cursor: params.cursor }
+            );
 
-          if (params.includeTotalCount && results['@odata.count'] !== undefined) {
-            response.totalCount = results['@odata.count'];
-            response.hasMore = (params.skip + params.top) < results['@odata.count'];
-          }
+            response = {
+              results: page.items,
+              totalCount: page.totalCount,
+              nextCursor: page.nextCursor
+            };
 
-          if (results['@search.facets']) {
-            response.facets = results['@search.facets'];
+            // Facets available on first page only typically
+            // Try to include facets if present in first fetch
+          } else {
+            // Legacy skip/top path
+            const req = { ...baseSearchRequest, top: params.top ?? DEFAULT_SEARCH_RESULTS, skip: params.skip ?? 0 };
+            const results: any = await helpers.withTimeout(
+              client.searchDocuments(params.indexName, req),
+              DEFAULT_TIMEOUT_MS,
+              "searchDocuments"
+            );
+
+            response = {
+              results: results.value || results,
+              count: results.value?.length || results.length,
+              totalCount: params.includeTotalCount ? results['@odata.count'] : undefined
+            };
+            if (results['@search.facets']) {
+              response.facets = results['@search.facets'];
+            }
           }
 
           // Summarize if results are large
