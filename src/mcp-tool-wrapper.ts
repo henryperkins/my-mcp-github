@@ -2,6 +2,7 @@
 // This wrapper allows the dynamic tools to be called directly from Claude Code
 import { AzureSearchClient } from "./azure-search-client";
 import { AzureOpenAIClient } from "./azure-openai-client";
+import { AzureSearchClientMock } from "./azure-search-client.mock";
 import type { ToolContext } from "./types";
 import { withTimeout as withTimeoutUtil } from "./utils/timeout";
 import { paginateArray } from "./utils/streaming-pagination";
@@ -45,11 +46,18 @@ export function createToolWrapper(toolName: string, env: any) {
       let cachedKey: string | null = null;
       let cachedClient: AzureSearchClient | null = null;
       return () => {
-      const endpoint = env.AZURE_SEARCH_ENDPOINT;
-      const apiKey = env.AZURE_SEARCH_API_KEY;
-      if (!endpoint || !apiKey) {
-        throw new Error("Missing AZURE_SEARCH_ENDPOINT or AZURE_SEARCH_API_KEY");
-      }
+        const useMock = env.AZURE_SEARCH_MOCK === "true" || env.AZURE_SEARCH_MOCK === "1";
+        if (useMock) {
+          if (cachedClient && cachedKey === "mock") return cachedClient;
+          cachedClient = new (AzureSearchClientMock as any)() as unknown as AzureSearchClient;
+          cachedKey = "mock";
+          return cachedClient;
+        }
+        const endpoint = env.AZURE_SEARCH_ENDPOINT;
+        const apiKey = env.AZURE_SEARCH_API_KEY;
+        if (!endpoint || !apiKey) {
+          throw new Error("Missing AZURE_SEARCH_ENDPOINT or AZURE_SEARCH_API_KEY");
+        }
         const key = `${endpoint}|${apiKey}`;
         if (cachedClient && cachedKey === key) return cachedClient;
         cachedClient = new AzureSearchClient(endpoint, apiKey);

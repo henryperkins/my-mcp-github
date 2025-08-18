@@ -13,7 +13,10 @@
     "build:dynamic": "tsc -p tsconfig.json --noEmit",
     "cf-typegen": "wrangler types",
     "type-check": "tsc --noEmit",
-    "test:tools": "tsx test-mcp-tools.ts"
+    "test:tools": "tsx test-mcp-tools.ts",
+    "test:mcp-local": "AZURE_SEARCH_MOCK=true tsx test-mcp-tools.ts",
+    "test:validate-local": "AZURE_SEARCH_MOCK=true tsx test-tool-validation.ts",
+    "dev:mock": "AZURE_SEARCH_MOCK=true wrangler dev"
   },
   "dependencies": {
     "@modelcontextprotocol/inspector": "^0.16.3",

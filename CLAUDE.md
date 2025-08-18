@@ -8,11 +8,25 @@ This is an Azure AI Search MCP (Model Context Protocol) server deployed on Cloud
 
 ## Architecture
 
-- **Main Entry**: `src/index.ts` - Defines the `AzureSearchMCP` class extending `McpAgent` and exposes `/sse` and `/mcp` endpoints
+### Core Components
+- **Main Entry Points**:
+  - `src/index.ts` - Basic MCP server with static tool registration
+  - `src/index-dynamic.ts` - Enhanced server with dynamic tool architecture (primary implementation)
+- **Dynamic Tool System**: `src/dynamic-tools/` - Modular tool architecture with:
+  - `base/DynamicTool.ts` - Abstract base class for all tools
+  - Individual tool implementations (IndexTool, DocumentTool, etc.)
+  - Operation-based design with categories (read/write/delete/analyze)
+  - Built-in pagination, elicitation, and batch processing support
+- **MCP Tool Wrapper**: `src/mcp-tool-wrapper.ts` - Direct invocation wrapper for dynamic tools
+  - Allows calling tools directly without MCP protocol overhead
+  - Provides `createToolWrapper()` for tool instantiation
+  - Includes `listAvailableTools()` and `getToolInfo()` utilities
+  - Useful for testing, debugging, and integration scenarios
 - **REST Client**: `src/azure-search-client.ts` - REST API client for Azure Search (Workers-compatible)
-- **OpenAI Client**: `src/azure-openai-client.ts` - Azure OpenAI integration for intelligent summarization of large responses
-- **Error Handling**: `src/insights.ts` - Used by response formatter for structured error insights and messaging
-- **Debug Tools**: `src/DebugTools.ts` - `debugElicitation` tool for verifying client elicitation support and timing
+- **OpenAI Client**: `src/azure-openai-client.ts` - Azure OpenAI integration for intelligent summarization
+- **Resources**: `src/resources.ts` - MCP resource definitions for real-time data exposure
+- **Prompts**: `src/dynamic-tools/prompts/` - Pre-built prompts for common operations
+- **Error Handling**: `src/insights.ts` - Structured error insights and remediation suggestions
 - **No OAuth**: Uses Azure Search API keys (stored as Worker secrets) rather than OAuth
 
 ## Key Implementation Details
@@ -88,60 +102,93 @@ AZURE_OPENAI_API_KEY=your_openai_api_key
 AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 ```
 
-## Available Tools
+## Available Tools (Dynamic Architecture)
 
-### Index Management
-- `listIndexes` - List all indexes with metadata
-  - Optional `includeStats`: Add document count and storage size
-  - Optional `verbose`: Return full index definitions
-  - Implementation detail: when `includeStats` is true, the server uses `/indexstats` (aggregate) with timeout and a concurrency-limited fallback to avoid timeouts
-- `getIndex` - Fetch full index definition (fields, analyzers, etc.)
-- `getIndexStats` - Get document count and storage usage
-- `createIndex` - Create a new search index with enhanced features
-  - Templates: `documentSearch`, `productCatalog`, `hybridSearch`, `knowledgeBase`
-  - Clone existing index with `cloneFrom`
-  - Auto language analyzer selection
-  - Built-in validation
-  - Vector dimensions configuration
-- `createOrUpdateIndex` - Smart index updates
-  - Add fields without full redefinition
-  - Update semantic search configuration
-  - Merge with existing definition
-  - Validation to prevent breaking changes
-- `deleteIndex` - Delete index and its documents
+The server uses a dynamic tool system where each tool category is a single MCP tool with multiple operations:
 
-### Document Operations
-- `searchDocuments` - Query documents with keyword search, filters, sorting, and pagination (max 50 items per request)
-- `getDocument` - Lookup document by primary key
-- `countDocuments` - Return document count for an index
-- `uploadDocuments` - Upload new documents to an index
-- `mergeDocuments` - Update existing documents in an index
-- `mergeOrUploadDocuments` - Update existing or create new documents
-- `deleteDocuments` - Delete documents from an index by key
+### IndexManagement Tool
+Operations available via `operation` parameter:
+- `list` - List all indexes with metadata (supports pagination, stats, verbose mode)
+- `get` - Fetch full index definition
+- `getStats` - Get document count and storage usage  
+- `create` - Create new index (templates: documentSearch, productCatalog, hybridSearch, knowledgeBase)
+- `createOrUpdate` - Smart index updates with field merging
+- `delete` - Delete index and its documents
+- `analyze` - Test text analysis with analyzers
+- `validate` - Validate index definition without creating
 
-### Synonym Map Management
-- `listSynonymMaps` - List all synonym map names
-- `getSynonymMap` - Get synonym map definition
-- `createOrUpdateSynonymMap` - Create or update a synonym map
-- `deleteSynonymMap` - Delete a synonym map
+### DocumentOperations Tool
+Operations available via `operation` parameter:
+- `search` - Query with keyword search, filters, vectors, pagination (max 50/page)
+- `get` - Lookup document by primary key
+- `count` - Return document count with optional filter
+- `upload` - Upload new documents (batch support)
+- `merge` - Update existing documents  
+- `mergeOrUpload` - Upsert documents
+- `delete` - Delete documents by key
+- `sample` - Get random sample of documents
 
-### Data Source Management
-- `listDataSources` - List data source connection names
-- `getDataSource` - Get data source connection details
+### DataSourceManagement Tool
+Operations available via `operation` parameter:
+- `list` - List data source connections
+- `get` - Get data source details
+- `create` - Create new data source (Blob, SQL, Cosmos DB, ADLS Gen2)
+- `createOrUpdate` - Update data source configuration
+- `delete` - Delete data source
+- `test` - Test connection validity
+- `generateSyncPlan` - Preview what will be indexed (Blob sources)
 
-### Indexer Management
-- `listIndexers` - List indexer names
-- `getIndexer` - Get indexer configuration
-- `runIndexer` - Run indexer immediately
-- `resetIndexer` - Reset change tracking for full re-crawl
-- `getIndexerStatus` - Get execution history/status (configurable history limit, default 5)
+### IndexerManagement Tool
+Operations available via `operation` parameter:
+- `list` - List indexers with status
+- `get` - Get indexer configuration
+- `create` - Create new indexer
+- `createOrUpdate` - Update indexer configuration
+- `delete` - Delete indexer
+- `run` - Run indexer immediately
+- `reset` - Reset change tracking
+- `getStatus` - Get execution history (configurable limit)
+- `schedule` - Update indexer schedule
 
-### Skillset Management
-- `listSkillsets` - List skillset names
-- `getSkillset` - Get skillset configuration
+### SkillsetManagement Tool
+Operations available via `operation` parameter:
+- `list` - List skillsets
+- `get` - Get skillset configuration
+- `create` - Create skillset with AI enrichment
+- `createOrUpdate` - Update skillset
+- `delete` - Delete skillset
+- `validate` - Validate skillset configuration
 
-### Debug / Diagnostics
-- `debugElicitation` - Report elicitation capability detection and optionally trigger a test elicitation (`performTest: true`)
+### ServiceUtilities Tool
+Operations available via `operation` parameter:
+- `getSynonymMaps` - List synonym maps
+- `getSynonymMap` - Get specific synonym map
+- `createOrUpdateSynonymMap` - Manage synonym maps
+- `deleteSynonymMap` - Delete synonym map
+- `getServiceStats` - Service-level statistics
+- `analyzeText` - Test text analysis
+- `setLogLevel` - Configure logging verbosity
+- `getMetrics` - Performance metrics
+
+### KnowledgeAgentOperations Tool
+Operations available via `operation` parameter:
+- `list` - List knowledge agents
+- `get` - Get agent configuration
+- `create` - Create new agent
+- `update` - Update agent settings
+- `delete` - Delete agent
+- `search` - Query agent knowledge base
+- `chat` - Interactive chat with agent
+
+### KnowledgeSourceOperations Tool  
+Operations available via `operation` parameter:
+- `list` - List knowledge sources
+- `get` - Get source details
+- `create` - Create source (Blob, Web)
+- `update` - Update source configuration
+- `delete` - Delete source
+- `sync` - Trigger manual sync
+- `getStatus` - Check sync status
 
 ## Elicitation Notes
 
@@ -192,13 +239,77 @@ claude mcp add --transport http azure-search http://localhost:8788/mcp
 - `workers-mcp`: MCP implementation for Workers
 - `zod`: Schema validation
 
+## Dynamic Tool System Details
+
+### Tool Architecture
+- **Base Class**: All tools extend `DynamicTool` base class
+- **Operation Pattern**: Each tool exposes multiple operations through a single MCP tool entry
+- **Operation Categories**: read, write, delete, analyze - for permission management
+- **Built-in Features**:
+  - Automatic pagination with cursor support
+  - Elicitation for confirmations on destructive operations
+  - Batch processing for bulk operations
+  - Progress reporting for long-running tasks
+  - Timeout management with configurable limits
+  - Response formatting with size limits
+
+### Direct Tool Invocation
+The `mcp-tool-wrapper.ts` provides direct access to tools without MCP protocol:
+
+```javascript
+// Example usage
+import { createToolWrapper } from './mcp-tool-wrapper';
+
+const indexTool = createToolWrapper('IndexManagement', env);
+const result = await indexTool({
+  operation: 'list',
+  params: { includeStats: true }
+});
+
+// Or use simplified syntax for operations without params
+const indexes = await indexTool('list');
+```
+
+Available wrapper functions:
+- `createToolWrapper(toolName, env)` - Create a callable tool instance
+- `listAvailableTools()` - Get all tools and their operations
+- `getToolInfo(toolName)` - Get detailed info about a specific tool
+
+### Helper Functions Available to Operations
+- `withTimeout` - Wrap async operations with timeout
+- `paginate` - Handle array pagination with cursors
+- `elicit` - Request user confirmation/input (returns null in direct mode)
+- `notify` - Send progress notifications
+- `processBatch` - Handle batch operations efficiently
+- `validateRequired` - Ensure required parameters
+- `log` - Structured logging at various levels
+
+### Resource System
+- Real-time data exposure through MCP resources
+- Automatic updates via `notifyResourcesListChanged()`
+- Resources include:
+  - `indexes://list` - Live index listing
+  - `metrics://[ToolName]` - Performance metrics per tool
+  - `search://recent` - Recent search queries
+  - `indexers://status` - Aggregate indexer status
+  - Service statistics and configuration
+
+### Prompt System
+- Pre-built prompts in `src/dynamic-tools/prompts/`
+- Advanced prompts for complex operations
+- Dynamic prompt generation based on context
+- Integration with tool operations for guided workflows
+
 ## Important Notes
 
 - The Azure SDK (`@azure/search-documents`) is NOT used due to incompatibility with Cloudflare Workers
 - All Azure Search operations use the REST API directly via `fetch()`
 - Large responses (>20KB) are automatically handled via:
   - Intelligent summarization using Azure OpenAI (if configured)
-  - Pagination for array results
+  - Pagination for array results (default 50 items)
   - Smart truncation as fallback
-- Advanced capabilities are implemented, including semantic and vector settings, index validation, and smart update/merge logic
-- `listIndexes` is optimized for performance with aggregate stats and fallbacks to reduce timeouts
+- Performance optimizations:
+  - `listIndexes` uses aggregate `/indexstats` endpoint
+  - Concurrent operations with controlled parallelism
+  - Response caching for frequently accessed data
+  - Streaming support for large result sets

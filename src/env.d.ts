@@ -8,6 +8,7 @@ declare module "cloudflare:workers" {
     AZURE_OPENAI_ENDPOINT?: string;
     AZURE_OPENAI_API_KEY?: string;
     AZURE_OPENAI_DEPLOYMENT?: string;
+    AZURE_SEARCH_MOCK?: string;
     
     // Durable Object binding
     MCP_OBJECT: DurableObjectNamespace;

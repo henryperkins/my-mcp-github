@@ -3,6 +3,7 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AzureSearchClient } from "./azure-search-client";
 import { AzureOpenAIClient } from "./azure-openai-client";
+import { AzureSearchClientMock } from "./azure-search-client.mock";
 import { registerResources } from "./resources";
 import { setLogLevel } from "./utils/logging";
 import type { ToolContext } from "./types";
@@ -84,6 +85,11 @@ For detailed documentation, see: https://github.com/azure-search-mcp/docs`
   private getClient(): AzureSearchClient {
     if (this.cachedClient) return this.cachedClient;
     const env = this.env as any;
+    const useMock = env.AZURE_SEARCH_MOCK === "true" || env.AZURE_SEARCH_MOCK === "1";
+    if (useMock) {
+      this.cachedClient = new (AzureSearchClientMock as any)() as unknown as AzureSearchClient;
+      return this.cachedClient;
+    }
     const endpoint = env.AZURE_SEARCH_ENDPOINT;
     const apiKey = env.AZURE_SEARCH_API_KEY;
     if (!endpoint || !apiKey) throw new Error("Missing AZURE_SEARCH_* config");
