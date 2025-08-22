@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "azure-search": {
+      "type": "sse",
+      "url": "https://your-worker.workers.dev/sse",
+      "headers": {
+        "X-AZURE-SEARCH-ENDPOINT": "https://your-search-service.search.windows.net",
+        "X-AZURE-SEARCH-API-KEY": "your-admin-api-key",
+        "X-AZURE-OPENAI-ENDPOINT": "https://your-openai.openai.azure.com/",
+        "X-AZURE-OPENAI-API-KEY": "your-openai-api-key",
+        "X-AZURE-OPENAI-DEPLOYMENT": "gpt-4o-mini"
+      }
+    }
+  }
+}

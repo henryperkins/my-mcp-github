@@ -193,15 +193,17 @@ export abstract class DynamicTool {
         examples
       };
     })();
-    // MCP SDK expects a Zod raw shape (not a ZodObject) for params schema.
-    // Passing a ZodObject here can cause the SDK to treat it as annotations,
-    // leading to a runtime "cb is not a function" when invoking the handler.
+    // Use the Zod raw shape (not a ZodObject) for params schema
     const paramsShape = (paramSchema as z.ZodObject<any>).shape as any;
-    server.tool(
+    
+    // Use registerTool API which properly supports annotations
+    server.registerTool(
       this.toolName,
-      this.description,
-      paramsShape,
-      annotations,
+      {
+        description: this.description,
+        inputSchema: paramsShape,
+        annotations: annotations
+      },
       async (input: any) => {
         const startTime = Date.now();
         // Accept shorthand where the arguments is just the operation name (string)
