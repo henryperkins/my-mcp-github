@@ -462,7 +462,6 @@ export class KnowledgeSourceTool extends DynamicTool {
         helpers.notify("tools/web_knowledge_source_created", {
           name: params.sourceName,
           urlCount: params.urls.length,
-          crawlDepth: params.crawlDepth,
           crawlDepth: params.crawlDepth
         });
 

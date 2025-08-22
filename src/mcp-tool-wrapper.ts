@@ -73,7 +73,15 @@ export function createToolWrapper(toolName: string, env: any) {
       const client = new AzureOpenAIClient(endpoint, apiKey, deployment);
       return (text: string, maxTokens?: number) => client.summarize(text, maxTokens);
     },
-    agent: null as any // Will be set if needed
+    agent: {
+      // Provide a stub for elicitation support in direct mode
+      elicitInput: async (params: { message: string; requestedSchema: any }) => {
+        console.warn(`[Elicitation Required] ${params.message}`);
+        console.warn('Elicitation is not available in direct tool invocation mode.');
+        // Return a safe "continue" action to avoid breaking the flow
+        return { action: 'continue', content: null };
+      }
+    } as any
   };
 
   // Return a function that can be called with operation and params
@@ -129,8 +137,13 @@ export function createToolWrapper(toolName: string, env: any) {
           return paginateArray(items, { pageSize: options.pageSize || 50, cursor: options.cursor });
         },
         elicit: async (options: any) => {
-          console.log(`[Elicitation Required] ${options.message}`);
-          return null; // Can't elicit in direct mode
+          console.warn(`[Elicitation Required] ${options.message}`);
+          if (options.choices) {
+            console.warn(`Available choices: ${options.choices.map((c: any) => `${c.value} (${c.label})`).join(', ')}`);
+          }
+          // In direct mode, we can't actually elicit, so return null
+          // The operation should handle this gracefully
+          return null;
         },
         notify: (event: string, data: any) => {
           console.log(`[${event}]`, sanitize(data));

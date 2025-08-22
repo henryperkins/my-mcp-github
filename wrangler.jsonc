@@ -9,7 +9,7 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "azure-search-mcp",
-	"main": "src/index.ts",
+	"main": "src/index-dynamic.ts",
 	"compatibility_date": "2025-03-10",
 	"compatibility_flags": [
 		"nodejs_compat"
@@ -35,13 +35,17 @@
 		},
 		{
 			"tag": "v3",
-			"new_sqlite_classes": ["AzureSearchMCPSQLite"]
+			"deleted_classes": ["AzureSearchMCPSQLite"]
+		},
+		{
+			"tag": "v4",
+			"new_sqlite_classes": ["AzureSearchMCPSQL"]
 		}
 	],
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "AzureSearchMCPSQLite",
+				"class_name": "AzureSearchMCPSQL",
 				"name": "MCP_OBJECT"
 			}
 		]

@@ -168,6 +168,14 @@ export abstract class DynamicTool {
 
     // Build tool hints
     const hints = this.buildHints();
+    
+    // Validate tool configuration
+    if (!this.toolName || this.toolName.trim() === '') {
+      throw new Error(`Tool class ${this.constructor.name} must define a non-empty toolName`);
+    }
+    if (!this.description || this.description.trim() === '') {
+      throw new Error(`Tool class ${this.constructor.name} must define a non-empty description`);
+    }
 
     // Register the main tool
     const annotations = (() => {
@@ -239,7 +247,7 @@ export abstract class DynamicTool {
 
           // Create operation helpers, threading progress token if provided by client
           const progressToken = (input as any)?._meta?.progressToken;
-          const helpers = this.createHelpers(context, operation, enableLogging, progressToken);
+          const helpers = this.createHelpers(context, operation, enableLogging, progressToken, this.toolName);
 
           // Log operation start
           if (enableLogging) {
@@ -353,7 +361,8 @@ export abstract class DynamicTool {
     context: ToolContext,
     operation: string,
     enableLogging: boolean,
-    progressToken?: string
+    progressToken: string | undefined,
+    toolName: string
   ): OperationHelpers {
     return {
       withTimeout: (promise, timeoutMs, op) =>

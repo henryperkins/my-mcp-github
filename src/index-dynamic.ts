@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AzureSearchClient } from "./azure-search-client";
 import { AzureOpenAIClient } from "./azure-openai-client";
 import { AzureSearchClientMock } from "./azure-search-client.mock";
-import { registerResources } from "./resources";
+
 import { setLogLevel } from "./utils/logging";
 import type { ToolContext } from "./types";
 
@@ -429,5 +429,7 @@ export default {
 // Export the Durable Object class
 export { AzureSearchMCPDynamic };
 
-// Also export as AzureSearchMCP for backward compatibility
+// Also export with backward compatibility aliases
 export { AzureSearchMCPDynamic as AzureSearchMCP };
+export { AzureSearchMCPDynamic as AzureSearchMCPSQLite };
+export { AzureSearchMCPDynamic as AzureSearchMCPSQL };
