@@ -176,3 +176,82 @@ dist
 .env*
 !.env.example
 .aider*
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Test files and logs
+test-*.js
+test-*.ts
+!test-mcp-tools.ts
+!test-tool-validation.ts
+comprehensive-test.ts
+*.log
+tsc.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Local configuration examples that have been copied
+.mcp.json
+!.mcp.json.example
+azure-sync-config.sh
+!azure-sync-config.example.sh
+
+# Shell scripts (except examples)
+run-*.sh
+!run-azure-search-mcp.sh
+
+# Screenshots and images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# Documentation working files
+*.draft.md
+*.todo.md
+FIXES-IMPLEMENTED.md
+MCP-REMEDIATION-PLAN.md
+MCP-TOOLS-EVALUATION.md
+issue.txt
+
+# Local test data
+test-data/
+mock-data/
+*.mock.json
+
+# Personal notes
+notes/
+*.notes.md
+claudecodemcp.md
+mcp-schema-reference.md
+
+# API specifications (keep only if needed for reference)
+azure_search_api_*.json
+
+# Worker configuration variants
+wrangler.dev.jsonc
+wrangler.*.jsonc
+!wrangler.jsonc
+
+# Package lock files (controversial - uncomment if team prefers not to track)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
