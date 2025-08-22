@@ -187,7 +187,10 @@ export abstract class DynamicTool {
         destructiveHint: hasDelete,
         idempotentHint: allRead,
         openWorldHint: true,
-        title: this.description
+        title: this.description,
+        // Provide non-standard hints and examples to guide LLMs/clients
+        hints,
+        examples
       };
     })();
     // MCP SDK expects a Zod raw shape (not a ZodObject) for params schema.

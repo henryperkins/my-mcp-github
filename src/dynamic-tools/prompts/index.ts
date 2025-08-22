@@ -35,8 +35,10 @@ export function registerPrompts(server: McpServer, context: ToolContext) {
 3. Enable faceting on category, price ranges, and ratings
 4. Set up scoring profiles to boost popular/featured products
 5. ${language ? `Configure ${language} language analyzers for text fields` : 'Use standard analyzers'}
-
-Call IndexManagement.create with template='productCatalog', indexName='${index_name}'${language ? `, language='${language}'` : ''}`;
+Use tool 'IndexManagement' with arguments:\n{
+  "operation": "create",
+  "params": { "indexName": "${index_name}", "template": "productCatalog"${language ? `, "language": "${language}"` : ''} }
+}`;
           break;
 
         case "documents":
@@ -47,8 +49,10 @@ Call IndexManagement.create with template='productCatalog', indexName='${index_n
 3. Enable highlighting and hit highlighting
 4. ${language ? `Configure ${language} language analyzers` : 'Use standard text analyzers'}
 5. Consider adding semantic search configuration for better relevance
-
-Call IndexManagement.create with template='documentSearch', indexName='${index_name}'${language ? `, language='${language}'` : ''}`;
+Use tool 'IndexManagement' with arguments:\n{
+  "operation": "create",
+  "params": { "indexName": "${index_name}", "template": "documentSearch"${language ? `, "language": "${language}"` : ''} }
+}`;
           break;
 
         case "knowledge":
@@ -60,8 +64,10 @@ Call IndexManagement.create with template='documentSearch', indexName='${index_n
 3. Enable semantic search for natural language queries
 4. ${language ? `Configure ${language} language analyzers` : 'Use standard analyzers'}
 5. Set up synonym maps for common terminology
-
-Call IndexManagement.create with template='knowledgeBase', indexName='${index_name}'${language ? `, language='${language}'` : ''}`;
+Use tool 'IndexManagement' with arguments:\n{
+  "operation": "create",
+  "params": { "indexName": "${index_name}", "template": "knowledgeBase"${language ? `, "language": "${language}"` : ''} }
+}`;
           break;
 
         case "hybrid":
@@ -73,8 +79,10 @@ Call IndexManagement.create with template='knowledgeBase', indexName='${index_na
 3. Include fields for: content (text), content_vector (embeddings)
 4. Vector dimensions: specify based on your embedding model (default 1536 for OpenAI)
 5. ${language ? `Configure ${language} language analyzers for text fields` : 'Use standard analyzers'}
-
-Call IndexManagement.create with template='hybridSearch', indexName='${index_name}'${language ? `, language='${language}'` : ''}, vectorDimensions=1536 (or your model's dimensions)`;
+Use tool 'IndexManagement' with arguments:\n{
+  "operation": "create",
+  "params": { "indexName": "${index_name}", "template": "hybridSearch"${language ? `, "language": "${language}"` : ''}, "vectorDimensions": 1536 }
+}`;
           break;
 
         case "custom":
@@ -133,10 +141,7 @@ Available templates:
         }
       });
 
-      let queryBuilder = `To search for "${search_intent}" in ${index_name}:\n\n`;
-      queryBuilder += `Use the DocumentOperations.search operation with:\n`;
-      queryBuilder += `- indexName: '${index_name}'\n`;
-      queryBuilder += `- search: '${search_intent}'\n`;
+      let queryBuilder = `To search for "${search_intent}" in ${index_name}, call tool 'DocumentOperations' with arguments:\n\n{\n  "operation": "search",\n  "params": { "indexName": "${index_name}", "search": "${search_intent}" }\n}\n`;
 
       if (filters) {
         queryBuilder += `\nFor filters like "${filters}", use OData syntax:\n`;
@@ -195,32 +200,32 @@ Available templates:
       let pipelineSteps = `To set up a data ingestion pipeline from ${source_type} to ${target_index}:\n\n`;
 
       pipelineSteps += `**Step 1: Check target index exists**\n`;
-      pipelineSteps += `Use IndexManagement.get with indexName='${target_index}' to verify the index schema\n\n`;
+      pipelineSteps += `Use tool 'IndexManagement' with arguments { "operation": "get", "params": { "indexName": "${target_index}" } } to verify the index schema\n\n`;
 
       pipelineSteps += `**Step 2: Create data source connection**\n`;
       switch (source_type?.toLowerCase()) {
         case "blob":
         case "storage":
-          pipelineSteps += `Configure Azure Blob Storage connection using DataSourceManagement.createBlob:\n`;
+          pipelineSteps += `Configure Azure Blob Storage connection using tool 'DataSourceManagement' with arguments { "operation": "createBlob", "params": { ... } }:\n`;
           pipelineSteps += `- Connection string to storage account\n`;
           pipelineSteps += `- Container name\n`;
           pipelineSteps += `- Optional: folder path, file extensions filter\n`;
           break;
         case "cosmos":
         case "cosmosdb":
-          pipelineSteps += `Configure Cosmos DB connection:\n`;
+          pipelineSteps += `Configure Cosmos DB connection using tool 'DataSourceManagement' (createOrUpdate):\n`;
           pipelineSteps += `- Connection string\n`;
           pipelineSteps += `- Database and collection names\n`;
           pipelineSteps += `- Optional: query for filtering\n`;
           break;
         case "sql":
-          pipelineSteps += `Configure Azure SQL connection:\n`;
+          pipelineSteps += `Configure Azure SQL connection using tool 'DataSourceManagement' (createOrUpdate):\n`;
           pipelineSteps += `- Connection string\n`;
           pipelineSteps += `- Table or view name\n`;
           pipelineSteps += `- Optional: change detection policy\n`;
           break;
         case "table":
-          pipelineSteps += `Configure Table Storage connection:\n`;
+          pipelineSteps += `Configure Table Storage connection using tool 'DataSourceManagement' (createOrUpdate):\n`;
           pipelineSteps += `- Connection string\n`;
           pipelineSteps += `- Table name\n`;
           pipelineSteps += `- Optional: query filter\n`;
@@ -239,7 +244,7 @@ Available templates:
       }
 
       pipelineSteps += `**Step ${ai_enrichment ? '4' : '3'}: Create indexer**\n`;
-      pipelineSteps += `Configure the indexer using IndexerManagement.create with:\n`;
+      pipelineSteps += `Configure the indexer using tool 'IndexerManagement' with arguments { "operation": "create", "params": { ... } } including:\n`;
       pipelineSteps += `- Data source reference\n`;
       pipelineSteps += `- Target index reference\n`;
       if (ai_enrichment) {
@@ -310,7 +315,7 @@ Available templates:
       if (check_indexers === 'yes') {
         healthCheck += `**4. Check Indexer Health**\n`;
         healthCheck += `Use IndexerManagement.list to find associated indexers, then:\n`;
-        healthCheck += `- IndexerManagement.status for execution history\n`;
+        healthCheck += `- IndexerManagement.getStatus for execution history\n`;
         healthCheck += `- Look for: Failed runs, warnings, slow performance\n`;
         healthCheck += `- Check last run time and success rate\n\n`;
       }
@@ -364,10 +369,13 @@ Available templates:
       plan.push(`- Document all field mappings and configurations\n`);
 
       plan.push(`**Step 2: Create New Index**`);
-      plan.push(`- Clone existing index: IndexManagement.create with cloneFrom='${source_index}'`);
+      plan.push(`- Retrieve existing definition: IndexManagement.get for '${source_index}'`);
       plan.push(`- New index name: '${source_index}-v2' or '${source_index}-${new Date().toISOString().split('T')[0]}'`);
-      plan.push(`- Apply your changes to the new index definition`);
-      plan.push(`- Validate the new schema before creation\n`);
+      plan.push(`- Apply your changes to the retrieved definition`);
+      plan.push(`- Create the new index using IndexManagement.create with a full indexDefinition`);
+      plan.push(`- Validate the new schema before creation
+`);
+      
 
       plan.push(`**Step 3: Migrate Data**`);
       plan.push(`Option A - Re-index from source:`);

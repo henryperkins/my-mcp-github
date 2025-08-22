@@ -98,14 +98,14 @@ Parameters: {
 
 ## Available Tools and Operations:
 
-1. **IndexManagement**: list, get, create, createOrUpdate, delete, getStats, analyze, validate
-2. **DocumentOperations**: search, get, count, upload, merge, mergeOrUpload, delete, sample
+1. **IndexManagement**: list, get, create, update, delete, stats, aliasList, aliasGet, aliasCreate, aliasUpdate, aliasDelete
+2. **DocumentOperations**: search, get, count, upload, merge, mergeOrUpload, delete
 3. **DataSourceManagement**: list, get, createBlob, createOrUpdate, delete, test, generateSyncPlan
 4. **IndexerManagement**: list, get, create, createOrUpdate, run, reset, getStatus, delete
 5. **SkillsetManagement**: list, get, create, createOrUpdate, delete, validate
 6. **ServiceUtilities**: serviceStats, analyzeText, listSynonymMaps, getSynonymMap, createOrUpdateSynonymMap
-7. **KnowledgeAgentOperations**: list, get, create, update, delete, search, chat
-8. **KnowledgeSourceOperations**: list, get, create, update, delete, sync, getStatus
+7. **KnowledgeAgentOperations**: list, get, create, update, delete
+8. **KnowledgeSourceOperations**: list, get, create, update, delete, createBlob, createWeb
 
 ## Additional Guidelines:
 

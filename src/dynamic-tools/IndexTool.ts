@@ -11,7 +11,7 @@ import {
 
 export class IndexTool extends DynamicTool {
   static readonly toolName = "IndexManagement";
-  static readonly description = "Comprehensive index management tool for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: list, get, create, createOrUpdate, delete, getStats, analyze, validate.";
+  static readonly description = "Comprehensive index management for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: list, get, create, update, delete, stats, aliasList, aliasGet, aliasCreate, aliasUpdate, aliasDelete.";
 
   static readonly operations: Record<string, OperationDefinition> = {
     list: {

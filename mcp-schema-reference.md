@@ -4,6 +4,38 @@ Here's the schema reference formatted in Markdown while preserving the exact con
 
 # Schema Reference
 
+Note: This repository uses multi-operation tools for Azure AI Search. While the MCP schema below is general, our server exposes tools that each support several operations. Clients must pass arguments as an object with an operation and a params field. This pattern avoids tool-calling errors (such as “cb is not a function”) by matching the server’s expected input shape and the MCP SDK’s tool registration semantics.
+
+Quick implementation notes for this server:
+- Tool call arguments: always `{ "operation": "<op>", "params": { ... } }`
+- Tool names: `IndexManagement`, `DocumentOperations`, `DataSourceManagement`, `IndexerManagement`, `SkillsetManagement`, `ServiceUtilities`, `KnowledgeAgentOperations`, `KnowledgeSourceOperations`
+- Response shape: server includes `content` (text) and `structuredContent` (JSON) in `CallToolResult`
+- Server registration: tools use Zod for validation; registration passes the Zod object shape to `server.tool(...)` (not a ZodObject instance)
+
+Examples (client-side `tools/call`):
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "IndexManagement",
+    "arguments": { "operation": "list", "params": { "includeStats": true } }
+  }
+}
+```
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "DocumentOperations",
+    "arguments": {
+      "operation": "search",
+      "params": { "indexName": "products", "search": "laptop", "pageSize": 10 }
+    }
+  }
+}
+```
+
 ## Common Types
 
 ### `Annotations`

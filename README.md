@@ -118,75 +118,73 @@ npx @modelcontextprotocol/inspector@latest
 
 ## Available Tools
 
-### Index Management
-- `listIndexes` - List all search indexes with metadata
-  - Optional `includeStats`: Add document count and storage size
-  - Optional `verbose`: Return full index definitions
-  - Optimized: Uses aggregate `/indexstats` with a timeout; falls back to per-index stats with small concurrency
-- `getIndex` - Get full index definition and schema
-- `getIndexStats` - View document count and storage usage
-- `createIndex` - Create a new search index
-- `createOrUpdateIndex` - Create or update index definition
-- `deleteIndex` - Delete an index and all its documents
+IMPORTANT: Each tool is a multi-operation tool. Always call with a JSON object: `{ "operation": "<op>", "params": { ... } }`.
 
-### Document Operations
-- `searchDocuments` - Search with filters, sorting, and pagination
-  - Max 50 results per request
-  - Supports skip/top for pagination
-  - Full OData filter syntax
-- `getDocument` - Retrieve document by key
-- `countDocuments` - Get total document count
-- `uploadDocuments` - Upload new documents to an index
-- `mergeDocuments` - Update existing documents
-- `mergeOrUploadDocuments` - Update existing or create new documents
-- `deleteDocuments` - Delete documents by key
+### IndexManagement
+- Operations: `list`, `get`, `create`, `createOrUpdate`, `update`, `delete`, `stats`, `analyze`, `validate`
+  - `list`: Optional `includeStats`, `verbose`, `pageSize`, `cursor`
+  - `create`: `indexName`, optional `template` (`documentSearch`, `productCatalog`, `hybridSearch`, `knowledgeBase`, `custom`); or provide `indexDefinition`
+  - `delete`: `indexName` with confirmation elicitation
 
-### Synonym Maps
-- `listSynonymMaps` - List all synonym maps
-- `getSynonymMap` - Get synonym map definition
-- `createOrUpdateSynonymMap` - Create or update synonym map
-- `deleteSynonymMap` - Delete a synonym map
+### DocumentOperations
+- Operations: `search`, `get`, `count`, `upload`, `merge`, `mergeOrUpload`, `delete`, `sample`
+  - `search`: `indexName`, optional `search`, `filter`, `orderBy`, `vectors`, `pageSize`, `cursor`, `select`, `includeTotalCount`, `facets`
 
-### Indexer Management
-- `listIndexers` - List all indexers
-- `getIndexer` - Get indexer configuration
-- `runIndexer` - Trigger indexer execution
-- `resetIndexer` - Reset change tracking
-- `getIndexerStatus` - View execution history (configurable limit)
+### DataSourceManagement
+- Operations: `list`, `get`, `createBlob`, `createOrUpdate`, `delete`, `test`, `generateSyncPlan`
 
-### Data Sources & Skillsets
-- `listDataSources` - List data source connections
-- `getDataSource` - Get connection details
-- `listSkillsets` - List AI enrichment skillsets
-- `getSkillset` - Get skillset configuration
+### IndexerManagement
+- Operations: `list`, `get`, `create`, `createOrUpdate`, `run`, `reset`, `getStatus`, `delete`
 
-### Debug / Diagnostics
-- `debugElicitation` - Check elicitation capability at runtime and optionally trigger a test (`performTest: true`)
+### SkillsetManagement
+- Operations: `list`, `get`, `create`, `createOrUpdate`, `delete`, `validate`
+
+### ServiceUtilities
+- Operations: `serviceStats`, `analyzeText`, `listSynonymMaps`, `getSynonymMap`, `createOrUpdateSynonymMap`, `deleteSynonymMap`
+
+### KnowledgeAgentOperations
+- Operations: `list`, `get`, `create`, `update`, `delete`, `search`, `chat`
+
+### KnowledgeSourceOperations
+- Operations: `list`, `get`, `create`, `update`, `delete`, `sync`, `getStatus`
 
 ## Usage Examples
 
-### Search Documents
-```javascript
+### List Indexes
+```json
 {
-  "tool": "searchDocuments",
+  "tool": "IndexManagement",
   "arguments": {
-    "indexName": "products",
-    "search": "laptop",
-    "filter": "category eq 'Electronics'",
-    "top": 10,
-    "skip": 0,
-    "orderBy": "price desc"
+    "operation": "list",
+    "params": { "includeStats": true }
+  }
+}
+```
+
+### Search Documents
+```json
+{
+  "tool": "DocumentOperations",
+  "arguments": {
+    "operation": "search",
+    "params": {
+      "indexName": "products",
+      "search": "laptop",
+      "filter": "category eq 'Electronics'",
+      "pageSize": 10,
+      "orderBy": "price desc"
+    }
   }
 }
 ```
 
 ### Get Indexer Status
-```javascript
+```json
 {
-  "tool": "getIndexerStatus",
+  "tool": "IndexerManagement",
   "arguments": {
-    "name": "my-indexer",
-    "historyLimit": 5
+    "operation": "getStatus",
+    "params": { "name": "my-indexer", "historyLimit": 5 }
   }
 }
 ```
@@ -252,3 +250,9 @@ az role assignment create \
 ## License
 
 MIT
+### "cb is not a function" when calling tools
+- Ensure you are using the multi-operation call shape:
+  - Correct: `{"operation":"list","params":{}}`
+  - Incorrect: raw string or missing `operation`
+- Verify you’re using the dynamic tool names above (e.g., `IndexManagement`, `DocumentOperations`).
+- If building a server extension, register tools with the Zod shape, not a ZodObject.

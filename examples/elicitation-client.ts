@@ -207,14 +207,14 @@ class AzureSearchElicitationClient {
     console.log("🧪 TESTING ELICITATION");
     console.log("=".repeat(60));
     
-    console.log("\n1️⃣  Testing index creation (should trigger elicitation)...");
+    console.log("\n1️⃣  Testing index creation via IndexManagement.create (should trigger elicitation)...");
     try {
-      // Call createIndex without full parameters
+      // Call IndexManagement.create without full parameters -> elicit template/definition
       const result = await this.client.callTool({
-        name: "createIndex",
+        name: "IndexManagement",
         arguments: {
-          // Intentionally incomplete - should trigger elicitation
-          indexName: "test-elicitation-demo"
+          operation: "create",
+          params: { indexName: "test-elicitation-demo" }
         }
       });
       console.log("\n✅ Result:", JSON.stringify(result.content, null, 2));
@@ -222,13 +222,14 @@ class AzureSearchElicitationClient {
       console.log("\n❌ Error:", error.message);
     }
     
-    console.log("\n2️⃣  Testing delete confirmation (should trigger elicitation)...");
+    console.log("\n2️⃣  Testing delete confirmation via IndexManagement.delete (should trigger elicitation)...");
     try {
-      // Call deleteIndex to trigger confirmation
+      // Call IndexManagement.delete to trigger confirmation elicitation
       const result = await this.client.callTool({
-        name: "deleteIndex",
+        name: "IndexManagement",
         arguments: {
-          indexName: "test-elicitation-demo"
+          operation: "delete",
+          params: { indexName: "test-elicitation-demo" }
         }
       });
       console.log("\n✅ Result:", JSON.stringify(result.content, null, 2));
@@ -256,7 +257,7 @@ Available commands:
   list              - List all indexes
   create <name>     - Create a new index (will elicit parameters)
   delete <name>     - Delete an index (will elicit confirmation)
-  search            - Search documents (will elicit index name)
+  search            - Search documents (prompts for index name/query)
   test              - Run elicitation tests
   quit              - Exit
         `);
@@ -267,8 +268,8 @@ Available commands:
         const indexName = input.substring(7).trim();
         try {
           const result = await this.client.callTool({
-            name: "createIndex",
-            arguments: { indexName }
+            name: "IndexManagement",
+            arguments: { operation: "create", params: { indexName } }
           });
           console.log("✅ Created:", result.content);
         } catch (error: any) {
@@ -278,8 +279,8 @@ Available commands:
         const indexName = input.substring(7).trim();
         try {
           const result = await this.client.callTool({
-            name: "deleteIndex",
-            arguments: { indexName }
+            name: "IndexManagement",
+            arguments: { operation: "delete", params: { indexName } }
           });
           console.log("✅ Deleted:", result.content);
         } catch (error: any) {
@@ -288,8 +289,8 @@ Available commands:
       } else if (input === 'list') {
         try {
           const result = await this.client.callTool({
-            name: "listIndexes",
-            arguments: {}
+            name: "IndexManagement",
+            arguments: { operation: "list", params: { includeStats: true } }
           });
           console.log("📋 Indexes:", result.content);
         } catch (error: any) {
@@ -297,9 +298,18 @@ Available commands:
         }
       } else if (input === 'search') {
         try {
+          const indexName = await this.rl.question("Index name: ");
+          const query = await this.rl.question("Search query (default *): ");
           const result = await this.client.callTool({
-            name: "searchDocuments",
-            arguments: { search: "*" }  // Missing indexName should trigger elicitation
+            name: "DocumentOperations",
+            arguments: {
+              operation: "search",
+              params: {
+                indexName,
+                search: query || "*",
+                pageSize: 10
+              }
+            }
           });
           console.log("🔍 Results:", result.content);
         } catch (error: any) {

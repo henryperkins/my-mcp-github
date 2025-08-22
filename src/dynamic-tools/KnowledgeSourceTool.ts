@@ -5,7 +5,7 @@ import type { ToolContext } from "../types";
 
 export class KnowledgeSourceTool extends DynamicTool {
   static readonly toolName = "KnowledgeSourceOperations";
-  static readonly description = "Knowledge source operations for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: list, get, create, update, delete, sync, getStatus.";
+  static readonly description = "Knowledge source operations for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: list, get, create, update, delete, createBlob, createWeb.";
 
   static readonly operations: Record<string, OperationDefinition> = {
     list: {
