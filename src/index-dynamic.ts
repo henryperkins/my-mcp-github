@@ -80,7 +80,7 @@ Parameters: {
   "operation": "search",
   "params": {
     "indexName": "my-index",
-    "searchText": "query"
+    "search": "query"
   }
 }
 

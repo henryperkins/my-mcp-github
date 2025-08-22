@@ -190,14 +190,20 @@ export abstract class DynamicTool {
         title: this.description
       };
     })();
+    // MCP SDK expects a Zod raw shape (not a ZodObject) for params schema.
+    // Passing a ZodObject here can cause the SDK to treat it as annotations,
+    // leading to a runtime "cb is not a function" when invoking the handler.
+    const paramsShape = (paramSchema as z.ZodObject<any>).shape as any;
     server.tool(
       this.toolName,
       this.description,
-      paramSchema as any,
+      paramsShape,
       annotations,
       async (input: any) => {
         const startTime = Date.now();
-        const { operation, params = {}, options = {} } = input;
+        // Accept shorthand where the arguments is just the operation name (string)
+        const normalizedInput = typeof input === 'string' ? { operation: input } : input || {};
+        const { operation, params = {}, options = {} } = normalizedInput;
 
         // Validate operation exists
         const op = this.operations[operation];
@@ -218,10 +224,29 @@ export abstract class DynamicTool {
         }
 
         try {
+          // Normalize params: accept null/undefined/JSON strings gracefully
+          let normalizedParams: any = params;
+          if (normalizedParams == null) {
+            normalizedParams = {};
+          } else if (typeof normalizedParams === 'string') {
+            const trimmed = normalizedParams.trim();
+            if (trimmed === '' || trimmed.toLowerCase() === 'null') {
+              normalizedParams = {};
+            } else {
+              try {
+                normalizedParams = JSON.parse(trimmed);
+              } catch (e) {
+                throw new Error(
+                  `Invalid params format: expected object or JSON string, received string '${normalizedParams}'. Tip: pass params as an object, e.g. {"operation":"${operation}","params":{}}`
+                );
+              }
+            }
+          }
+
           // Skip validation if requested
           const validatedParams = options.skipValidation
-            ? params
-            : op.params.parse(params);
+            ? normalizedParams
+            : op.params.parse(normalizedParams);
 
           // Dry run - validate only
           if (options.dryRun) {
@@ -730,9 +755,12 @@ export abstract class DynamicTool {
     if (!this.resources) return;
 
     for (const resource of this.resources) {
+      // Correct argument order: resource(name, uri, [metadata], readCallback)
+      // Use the URI as both name and uri for simplicity; attach description as metadata
       server.resource(
         resource.uri,
-        resource.description,
+        resource.uri,
+        { description: resource.description },
         async () => {
           const data = await resource.handler(context);
           return {
