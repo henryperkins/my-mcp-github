@@ -1,258 +1,459 @@
 # Azure AI Search MCP Server
 
-A powerful MCP (Model Context Protocol) server for managing Azure AI Search services, deployed on Cloudflare Workers. Features intelligent response summarization with Azure OpenAI and comprehensive search index management.
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/henryperkins/my-mcp-github)
+[![MCP Version](https://img.shields.io/badge/MCP-v2.0.0-blue)](https://modelcontextprotocol.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Features
+A powerful Model Context Protocol (MCP) server that enables AI assistants to manage Azure AI Search services. Deploy on Cloudflare Workers for global edge performance or run locally for development.
 
-- 🔍 **Full Azure Search Management** - Create, update, and manage indexes, documents, synonym maps, data sources, indexers, and skillsets
-- 🤖 **Intelligent Summarization** - Large responses (>20KB) are automatically summarized using GPT-4o-mini
-- 📄 **Smart Pagination** - Automatic pagination for large result sets (max 50 items per search)
-- 🚀 **Cloudflare Workers** - Fast, globally distributed edge deployment
-- 🔌 **Multiple Transports** - Supports both SSE and standard HTTP endpoints
-- ⚡ **No OAuth Required** - Uses Azure Search API keys directly
+## 🚀 Quick Start
 
-## Prerequisites
-
-- Azure AI Search service with admin API key
-- Azure OpenAI resource (optional, for summarization)
-- Cloudflare account (for deployment)
-- Node.js 18+ and npm
-
-## Quick Start
-
-### 1. Clone and Install
+### Fastest Setup: Connect to Deployed Server
 
 ```bash
-git clone <your-repo>
-cd azure-search-mcp
-npm install
+# For Claude Code
+claude mcp add --transport sse azure-search https://azure-search-mcp.lfd.workers.dev/sse \
+  --header "X-Azure-Search-Endpoint: https://your-service.search.windows.net" \
+  --header "X-Azure-Search-Api-Key: your-api-key"
+
+# For Claude Desktop - add to config file
+{
+  "mcpServers": {
+    "azure-search": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://azure-search-mcp.lfd.workers.dev/sse"]
+    }
+  }
+}
 ```
 
-### 2. Configure Environment
+That's it! Start using Azure Search in your AI assistant immediately.
 
-#### Local Development
-Create `.dev.vars` file:
+## 📋 Table of Contents
+
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Installation](#-installation)
+- [Usage Guide](#-usage-guide)
+- [Available Operations](#-available-operations)
+- [Examples](#-examples)
+- [Troubleshooting](#-troubleshooting)
+- [Development](#-development)
+- [Architecture](#-architecture)
+
+## ✨ Features
+
+- **🔍 Complete Azure Search Management** - Full control over indexes, documents, data sources, indexers, and skillsets
+- **🤖 Intelligent Response Handling** - Automatic summarization of large responses using GPT-4o-mini
+- **📄 Smart Pagination** - Efficient handling of large result sets with cursor-based pagination
+- **🚀 Edge Deployment** - Fast, globally distributed via Cloudflare Workers
+- **🔌 Multiple Transports** - SSE (Server-Sent Events) and HTTP support
+- **⚡ Direct API Access** - No OAuth complexity, uses Azure Search API keys
+- **🛡️ Built-in Safety** - Confirmation prompts for destructive operations
+- **📊 Real-time Resources** - Live monitoring of indexes, indexers, and service stats
+
+## 📦 Prerequisites
+
+### Required
+- **Azure AI Search Service** with:
+  - Endpoint URL (e.g., `https://your-service.search.windows.net`)
+  - Admin API key (found in Azure Portal → Your Search Service → Keys)
+
+### Optional
+- **Azure OpenAI** (for intelligent summarization):
+  - Endpoint, API key, and deployment name (e.g., `gpt-4o-mini`)
+- **Cloudflare Account** (for custom deployment)
+- **Node.js 18+** (for local development)
+
+## 🔧 Installation
+
+### Option 1: Use the Deployed Server (Recommended)
+
+The server is already deployed and ready to use at:
+- **Base URL**: `https://azure-search-mcp.lfd.workers.dev`
+- **SSE Endpoint**: `https://azure-search-mcp.lfd.workers.dev/sse`
+- **HTTP Endpoint**: `https://azure-search-mcp.lfd.workers.dev/mcp`
+
+#### Connect with Claude Code
+
 ```bash
-AZURE_SEARCH_ENDPOINT=https://your-search-service.search.windows.net
-AZURE_SEARCH_API_KEY=your_admin_api_key
-AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com/
-AZURE_OPENAI_API_KEY=your_openai_api_key
-AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+# SSE Transport (recommended)
+claude mcp add --transport sse azure-search https://azure-search-mcp.lfd.workers.dev/sse \
+  --header "X-Azure-Search-Endpoint: https://your-service.search.windows.net" \
+  --header "X-Azure-Search-Api-Key: your-api-key"
+
+# HTTP Transport
+claude mcp add --transport http azure-search https://azure-search-mcp.lfd.workers.dev/mcp \
+  --header "X-Azure-Search-Endpoint: https://your-service.search.windows.net" \
+  --header "X-Azure-Search-Api-Key: your-api-key"
 ```
 
-#### Production Deployment
-```bash
-# Azure Search (Required)
-wrangler secret put AZURE_SEARCH_ENDPOINT
-wrangler secret put AZURE_SEARCH_API_KEY
-
-# Azure OpenAI (Optional - for summarization)
-wrangler secret put AZURE_OPENAI_ENDPOINT
-wrangler secret put AZURE_OPENAI_API_KEY
-wrangler secret put AZURE_OPENAI_DEPLOYMENT
-```
-
-### 3. Deploy
-
-```bash
-# Development server (local)
-npm run dev
-# Available at http://localhost:8788
-
-# Production deployment
-npm run deploy
-# Available at https://azure-search-mcp.<your-subdomain>.workers.dev
-```
-
-**Endpoints:**
-- SSE: `https://azure-search-mcp.<your-subdomain>.workers.dev/sse`
-- HTTP: `https://azure-search-mcp.<your-subdomain>.workers.dev/mcp`
-
-## Documentation
-
-- Elicitation + MCP lessons learned: `docs/elicitation-and-mcp-lessons.md`
-- Elicitation client guide: `docs/elicitation-client-guide.md`
-
-## Client Configuration
-
-### Claude Desktop
+#### Connect with Claude Desktop
 
 Add to your configuration file:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-**Linux**: `~/.config/claude/claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/claude/claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "azure-search": {
       "command": "npx",
-      "args": ["mcp-remote", "https://your-worker.workers.dev/sse"]
+      "args": ["mcp-remote", "https://azure-search-mcp.lfd.workers.dev/sse"],
+      "env": {
+        "AZURE_SEARCH_ENDPOINT": "https://your-service.search.windows.net",
+        "AZURE_SEARCH_API_KEY": "your-api-key"
+      }
     }
   }
 }
 ```
 
-### Claude CLI
+### Option 2: Deploy Your Own Instance
 
 ```bash
-# Add the MCP server
-claude mcp add --transport sse azure-search https://your-worker.workers.dev/sse
+# Clone repository
+git clone https://github.com/henryperkins/my-mcp-github.git
+cd my-mcp-github
 
-# Or use directly
-claude -p "Search for AI documents" \
-  --mcp-server azure-search=https://your-worker.workers.dev/sse
+# Install dependencies
+npm install
 
-# Local development
-claude mcp add --transport sse azure-search http://localhost:8788/sse
-claude mcp add --transport http azure-search http://localhost:8788/mcp
+# Configure secrets
+wrangler secret put AZURE_SEARCH_ENDPOINT
+wrangler secret put AZURE_SEARCH_API_KEY
+wrangler secret put AZURE_OPENAI_ENDPOINT  # Optional
+wrangler secret put AZURE_OPENAI_API_KEY   # Optional
+
+# Deploy to Cloudflare
+npm run deploy
 ```
 
-### MCP Inspector (Testing)
+### Option 3: Run Locally
 
 ```bash
-npx @modelcontextprotocol/inspector@latest
-# Enter URL: https://your-worker.workers.dev/sse
+# Clone and install
+git clone https://github.com/henryperkins/my-mcp-github.git
+cd my-mcp-github
+npm install
+
+# Create .dev.vars file
+cat > .dev.vars << EOF
+AZURE_SEARCH_ENDPOINT=https://your-service.search.windows.net
+AZURE_SEARCH_API_KEY=your-api-key
+AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com/  # Optional
+AZURE_OPENAI_API_KEY=your-openai-key  # Optional
+EOF
+
+# Run development server
+npm run dev  # Available at http://localhost:8788
+
+# Or run with mock data (no Azure required)
+npm run dev:mock
 ```
 
-## Available Tools
+## 📖 Usage Guide
 
-IMPORTANT: Each tool is a multi-operation tool. Always call with a JSON object: `{ "operation": "<op>", "params": { ... } }`.
+### How to Interact with the Server
 
-### IndexManagement
-- Operations: `list`, `get`, `create`, `createOrUpdate`, `update`, `delete`, `stats`, `analyze`, `validate`
-  - `list`: Optional `includeStats`, `verbose`, `pageSize`, `cursor`
-  - `create`: `indexName`, optional `template` (`documentSearch`, `productCatalog`, `hybridSearch`, `knowledgeBase`, `custom`); or provide `indexDefinition`
-  - `delete`: `indexName` with confirmation elicitation
+Once connected, you can interact naturally with your AI assistant. The server handles all the complexity behind the scenes.
 
-### DocumentOperations
-- Operations: `search`, `get`, `count`, `upload`, `merge`, `mergeOrUpload`, `delete`, `sample`
-  - `search`: `indexName`, optional `search`, `filter`, `orderBy`, `vectors`, `pageSize`, `cursor`, `select`, `includeTotalCount`, `facets`
+#### Example Conversations
 
-### DataSourceManagement
-- Operations: `list`, `get`, `createBlob`, `createOrUpdate`, `delete`, `test`, `generateSyncPlan`
+```
+You: Show me all search indexes with their document counts
 
-### IndexerManagement
-- Operations: `list`, `get`, `create`, `createOrUpdate`, `run`, `reset`, `getStatus`, `delete`
+Claude: I'll list all the search indexes with their statistics.
+[Lists indexes with document counts, storage sizes, and features]
 
-### SkillsetManagement
-- Operations: `list`, `get`, `create`, `createOrUpdate`, `delete`, `validate`
+You: Search for "laptop" in the products index with price under $1000
 
-### ServiceUtilities
-- Operations: `serviceStats`, `analyzeText`, `listSynonymMaps`, `getSynonymMap`, `createOrUpdateSynonymMap`, `deleteSynonymMap`
+Claude: I'll search for laptops under $1000 in your products index.
+[Returns filtered search results with relevant products]
 
-### KnowledgeAgentOperations
-- Operations: `list`, `get`, `create`, `update`, `delete`, `search`, `chat`
+You: Create an indexer to sync data from blob storage every hour
 
-### KnowledgeSourceOperations
-- Operations: `list`, `get`, `create`, `update`, `delete`, `sync`, `getStatus`
-
-## Usage Examples
-
-### List Indexes
-```json
-{
-  "tool": "IndexManagement",
-  "arguments": {
-    "operation": "list",
-    "params": { "includeStats": true }
-  }
-}
+Claude: I'll create an indexer with hourly synchronization from your blob storage.
+[Sets up the indexer with the specified schedule]
 ```
 
-### Search Documents
-```json
-{
-  "tool": "DocumentOperations",
-  "arguments": {
-    "operation": "search",
-    "params": {
-      "indexName": "products",
-      "search": "laptop",
-      "filter": "category eq 'Electronics'",
-      "pageSize": 10,
-      "orderBy": "price desc"
-    }
-  }
-}
-```
+### Verifying Connection
 
-### Get Indexer Status
-```json
-{
-  "tool": "IndexerManagement",
-  "arguments": {
-    "operation": "getStatus",
-    "params": { "name": "my-indexer", "historyLimit": 5 }
-  }
-}
-```
-
-## Response Handling
-
-### Intelligent Summarization
-When responses exceed 20KB:
-1. Attempts to summarize using Azure OpenAI (GPT-4o-mini)
-2. Preserves key technical details and structure
-3. Falls back to smart truncation if OpenAI unavailable
-
-### Pagination
-- Search results: Maximum 50 items per request
-- Use `skip` and `top` parameters for pagination
-- Arrays show first 10 items with pagination hints
-
-## Development
+After adding the server, verify it's working:
 
 ```bash
+# In Claude Code
+/mcp
+
+# Check specific server
+claude mcp get azure-search
+
+# List all servers
+claude mcp list
+```
+
+## 🛠️ Available Operations
+
+The server provides comprehensive Azure Search management through these tools:
+
+### 📚 Index Management (`IndexManagement`)
+| Operation | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `list` | List all indexes with stats | `includeStats`, `verbose`, `pageSize` |
+| `get` | Get index definition | `indexName` |
+| `create` | Create new index | `indexName`, `template`, `indexDefinition` |
+| `update` | Update index schema | `indexName`, `indexDefinition` |
+| `delete` | Delete index | `indexName` (with confirmation) |
+| `stats` | Get index statistics | `indexName` |
+
+**Templates available**: `documentSearch`, `productCatalog`, `hybridSearch`, `knowledgeBase`
+
+### 📄 Document Operations (`DocumentOperations`)
+| Operation | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `search` | Search documents | `indexName`, `search`, `filter`, `orderBy` |
+| `get` | Get document by ID | `indexName`, `key` |
+| `count` | Count documents | `indexName`, `filter` |
+| `upload` | Upload new documents | `indexName`, `documents` |
+| `merge` | Update existing documents | `indexName`, `documents` |
+| `delete` | Delete documents | `indexName`, `keys` |
+
+### 🔌 Data Source Management (`DataSourceManagement`)
+| Operation | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `list` | List data sources | - |
+| `get` | Get data source details | `name` |
+| `createBlob` | Create blob storage source | `name`, `connectionString`, `container` |
+| `delete` | Delete data source | `name` |
+| `test` | Test connection | `name` |
+
+### ⚙️ Indexer Management (`IndexerManagement`)
+| Operation | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `list` | List all indexers | - |
+| `get` | Get indexer config | `name` |
+| `create` | Create new indexer | `name`, `dataSource`, `targetIndex` |
+| `run` | Run indexer now | `name` |
+| `reset` | Reset change tracking | `name` |
+| `getStatus` | Get execution history | `name`, `historyLimit` |
+
+### 🧠 Skillset Management (`SkillsetManagement`)
+| Operation | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `list` | List AI enrichment skillsets | - |
+| `get` | Get skillset definition | `name` |
+| `create` | Create skillset | `name`, `skills` |
+| `validate` | Validate configuration | `skillsetDefinition` |
+
+### 🔧 Service Utilities (`ServiceUtilities`)
+| Operation | Description | Key Parameters |
+|-----------|-------------|----------------|
+| `serviceStats` | Get service quotas/usage | - |
+| `analyzeText` | Test text analyzers | `text`, `analyzer` |
+| `listSynonymMaps` | List synonym maps | - |
+| `createOrUpdateSynonymMap` | Manage synonyms | `name`, `synonyms` |
+
+## 💡 Examples
+
+### Creating a Product Catalog Index
+
+```
+You: Create a product catalog index named "products-v2" with English language support
+
+Claude: I'll create a product catalog index with English language support for you.
+[Creates index with appropriate fields for product data including name, description, 
+price, category, with proper analyzers for English text]
+```
+
+### Complex Search with Filters
+
+```
+You: Search the orders index for pending orders from last week, sorted by amount
+
+Claude: I'll search for pending orders from the last week, sorted by amount.
+[Executes search with date filter, status filter, and ordering]
+```
+
+### Setting Up Data Sync
+
+```
+You: Set up a complete data pipeline from my blob storage to a new search index
+
+Claude: I'll help you set up a complete data pipeline. This will involve:
+1. Creating a data source connection to your blob storage
+2. Creating a target index with appropriate schema
+3. Setting up an indexer to sync data
+[Proceeds with step-by-step setup]
+```
+
+## 🔍 Troubleshooting
+
+### Common Issues and Solutions
+
+#### "Connection closed" or "Not connected" Error
+```bash
+# Remove and re-add the server
+claude mcp remove azure-search
+claude mcp add --transport sse azure-search https://azure-search-mcp.lfd.workers.dev/sse \
+  --header "X-Azure-Search-Endpoint: https://your-service.search.windows.net" \
+  --header "X-Azure-Search-Api-Key: your-api-key"
+```
+
+#### Authentication Failures
+- ✅ Verify API key has admin permissions
+- ✅ Check endpoint URL format (should end with `.search.windows.net`)
+- ✅ Ensure no extra spaces in credentials
+- ✅ Confirm service is not in free tier (some operations require paid tiers)
+
+#### Large Response Issues
+- Responses >20KB are automatically summarized
+- Configure Azure OpenAI for best results:
+  ```bash
+  wrangler secret put AZURE_OPENAI_ENDPOINT
+  wrangler secret put AZURE_OPENAI_API_KEY
+  ```
+- Use pagination: `pageSize` and `cursor` parameters
+- Use `select` to limit returned fields
+
+#### Rate Limiting (429 Errors)
+- Implement exponential backoff
+- Reduce request frequency
+- Consider upgrading service tier
+
+#### Windows-Specific Issues
+For native Windows (not WSL), use cmd wrapper:
+```bash
+claude mcp add my-server -- cmd /c npx -y @azure/search-mcp
+```
+
+### Debugging Tips
+
+1. **Enable verbose logging**:
+   ```
+   You: Set logging level to debug
+   ```
+
+2. **Check server status**:
+   ```bash
+   /mcp
+   ```
+
+3. **Test with mock data**:
+   ```bash
+   AZURE_SEARCH_MOCK=true npm run dev
+   ```
+
+4. **Inspect raw responses**:
+   ```bash
+   curl -X POST https://azure-search-mcp.lfd.workers.dev/mcp \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+   ```
+
+## 🧪 Development
+
+### Local Development Setup
+
+```bash
+# Install dependencies
+npm install
+
 # Type checking
 npm run type-check
+
+# Run tests
+npm test
 
 # Generate Cloudflare types
 npm run cf-typegen
 
-# View logs
+# Watch logs
 wrangler tail
 ```
 
-## Troubleshooting
+### Project Structure
 
-### Permission Errors
-If you see Azure OpenAI permission errors:
-```bash
-az role assignment create \
-  --assignee <service-principal-id> \
-  --role "Cognitive Services OpenAI User" \
-  --scope /subscriptions/<subscription-id>
+```
+azure-search-mcp/
+├── src/
+│   ├── index-dynamic.ts        # Main MCP server with dynamic tools
+│   ├── dynamic-tools/           # Tool implementations
+│   │   ├── base/               # Base classes and interfaces
+│   │   ├── IndexTool.ts        # Index management operations
+│   │   ├── DocumentTool.ts     # Document operations
+│   │   └── ...                 # Other tools
+│   ├── azure-search-client.ts  # Azure Search REST client
+│   ├── azure-openai-client.ts  # OpenAI integration
+│   ├── resources.ts            # MCP resource definitions
+│   └── utils/                  # Helper functions
+├── docs/                       # Documentation
+├── test/                       # Test files
+└── wrangler.toml              # Cloudflare configuration
 ```
 
-### Large Response Issues
-- Responses >20KB trigger automatic summarization
-- Ensure Azure OpenAI credentials are configured
-- Use pagination parameters for large result sets
+### Environment Variables
 
-### Connection Issues
-- Verify API keys are correct
-- Check Azure Search service is running
-- Ensure Cloudflare Worker is deployed
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AZURE_SEARCH_ENDPOINT` | Yes | Your Azure Search service URL |
+| `AZURE_SEARCH_API_KEY` | Yes | Admin API key |
+| `AZURE_OPENAI_ENDPOINT` | No | Azure OpenAI endpoint for summarization |
+| `AZURE_OPENAI_API_KEY` | No | Azure OpenAI API key |
+| `AZURE_OPENAI_DEPLOYMENT` | No | Deployment name (default: gpt-4o-mini) |
 
-## Architecture
+## 🏗️ Architecture
 
+### Technical Stack
 - **Runtime**: Cloudflare Workers with Durable Objects
-- **Protocol**: MCP (Model Context Protocol)
-- **APIs**: Azure Search REST API v2025-08-01-preview, Azure OpenAI v2024-08-01-preview
+- **Protocol**: Model Context Protocol (MCP) v2.0
 - **Language**: TypeScript
-- **Files**:
-  - `src/index.ts` - Main MCP server
-  - `src/azure-search-client.ts` - Azure Search REST client
-  - `src/azure-openai-client.ts` - Azure OpenAI client
+- **APIs**: 
+  - Azure Search REST API (2025-08-01-preview)
+  - Azure OpenAI API (2024-08-01-preview)
 
-## License
+### Key Design Decisions
 
-MIT
-### "cb is not a function" when calling tools
-- Ensure you are using the multi-operation call shape:
-  - Correct: `{"operation":"list","params":{}}`
-  - Incorrect: raw string or missing `operation`
-- Verify you’re using the dynamic tool names above (e.g., `IndexManagement`, `DocumentOperations`).
-- If building a server extension, register tools with the Zod shape, not a ZodObject.
+1. **Dynamic Tool System**: Multi-operation tools reduce overhead and improve performance
+2. **Response Management**: Automatic summarization/truncation for large payloads
+3. **Direct API Access**: Uses REST API instead of SDK for Workers compatibility
+4. **Edge Deployment**: Global distribution via Cloudflare's network
+5. **No OAuth**: Simplified authentication using API keys
+
+### Performance Optimizations
+- Concurrent operations with controlled parallelism
+- Response caching for frequently accessed data
+- Streaming support for large result sets
+- Automatic pagination (max 50 items default)
+- Intelligent field selection to reduce payload size
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) file for details
+
+## 🆘 Support
+
+- **Issues**: [GitHub Issues](https://github.com/henryperkins/my-mcp-github/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/henryperkins/my-mcp-github/discussions)
+- **MCP Documentation**: [modelcontextprotocol.io](https://modelcontextprotocol.io)
+- **Azure Search Docs**: [docs.microsoft.com](https://docs.microsoft.com/azure/search/)
+
+## 🙏 Acknowledgments
+
+- Built on the [Model Context Protocol](https://modelcontextprotocol.io) by Anthropic
+- Powered by [Cloudflare Workers](https://workers.cloudflare.com)
+- Integrates with [Azure AI Search](https://azure.microsoft.com/services/search/) and [Azure OpenAI](https://azure.microsoft.com/services/openai/)
+
+---
+
+**Version**: 2.0.0 | **Last Updated**: December 2024
