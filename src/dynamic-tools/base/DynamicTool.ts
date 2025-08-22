@@ -194,18 +194,7 @@ export abstract class DynamicTool {
       this.toolName,
       this.description,
       paramSchema as any,
-      {
-        annotations,
-        _meta: {
-          examples,
-          hints,
-          metadata: {
-            version: "2.0.0",
-            dynamic: true,
-            operationCount: Object.keys(this.operations).length
-          }
-        }
-      },
+      annotations,
       async (input: any) => {
         const startTime = Date.now();
         const { operation, params = {}, options = {} } = input;

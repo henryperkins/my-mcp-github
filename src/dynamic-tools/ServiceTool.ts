@@ -5,7 +5,7 @@ import type { ToolContext } from "../types";
 
 export class ServiceTool extends DynamicTool {
   static readonly toolName = "ServiceUtilities";
-  static readonly description = "Service-level utilities including synonym maps, statistics, text analysis, and debugging tools.";
+  static readonly description = "Service utilities for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: serviceStats, analyzeText, listSynonymMaps, getSynonymMap, createOrUpdateSynonymMap, deleteSynonymMap.";
 
   static readonly operations: Record<string, OperationDefinition> = {
     // Service Statistics

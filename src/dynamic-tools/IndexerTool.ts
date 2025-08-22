@@ -5,7 +5,7 @@ import type { ToolContext } from "../types";
 
 export class IndexerTool extends DynamicTool {
   static readonly toolName = "IndexerManagement";
-  static readonly description = "Manage Azure Search indexers for automated data ingestion from external sources like Azure Blob Storage.";
+  static readonly description = "Indexer management for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: list, get, create, createOrUpdate, run, reset, getStatus, delete.";
 
   static readonly operations: Record<string, OperationDefinition> = {
     list: {

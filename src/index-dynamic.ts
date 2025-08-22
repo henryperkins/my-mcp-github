@@ -59,6 +59,56 @@ class AzureSearchMCPDynamic extends McpAgent {
     },
     instructions: `Azure AI Search MCP Server - Usage Guidelines:
 
+## IMPORTANT: How to Call Tools
+
+Each tool requires TWO parameters:
+1. **operation** (required): The specific operation to perform (e.g., "list", "get", "create")
+2. **params** (optional): Operation-specific parameters as an object
+
+### Correct Usage Examples:
+
+**List indexes:**
+Tool: IndexManagement
+Parameters: {
+  "operation": "list",
+  "params": {}
+}
+
+**Search documents:**
+Tool: DocumentOperations
+Parameters: {
+  "operation": "search",
+  "params": {
+    "indexName": "my-index",
+    "searchText": "query"
+  }
+}
+
+**Get service statistics:**
+Tool: ServiceUtilities
+Parameters: {
+  "operation": "serviceStats",
+  "params": {}
+}
+
+### NEVER call tools like this (INCORRECT):
+- IndexManagement({}) - Missing operation field
+- DocumentOperations("search") - Wrong parameter format
+- ServiceUtilities - No parameters at all
+
+## Available Tools and Operations:
+
+1. **IndexManagement**: list, get, create, createOrUpdate, delete, getStats, analyze, validate
+2. **DocumentOperations**: search, get, count, upload, merge, mergeOrUpload, delete, sample
+3. **DataSourceManagement**: list, get, createBlob, createOrUpdate, delete, test, generateSyncPlan
+4. **IndexerManagement**: list, get, create, createOrUpdate, run, reset, getStatus, delete
+5. **SkillsetManagement**: list, get, create, createOrUpdate, delete, validate
+6. **ServiceUtilities**: serviceStats, analyzeText, listSynonymMaps, getSynonymMap, createOrUpdateSynonymMap
+7. **KnowledgeAgentOperations**: list, get, create, update, delete, search, chat
+8. **KnowledgeSourceOperations**: list, get, create, update, delete, sync, getStatus
+
+## Additional Guidelines:
+
 1. **Pagination**: Use cursor-based pagination for large result sets. When you receive a 'nextCursor' in responses, pass it back as 'cursor' parameter to get the next page.
 
 2. **Large Responses**: Responses over 20KB are automatically summarized using GPT-4o-mini when configured, or truncated with guidance.

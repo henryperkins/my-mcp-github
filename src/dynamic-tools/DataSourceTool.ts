@@ -5,7 +5,7 @@ import type { ToolContext } from "../types";
 
 export class DataSourceTool extends DynamicTool {
   static readonly toolName = "DataSourceManagement";
-  static readonly description = "Manage Azure Search data sources for indexing external content from Azure Blob Storage, Azure SQL, Cosmos DB, ADLS Gen2, and other supported sources.";
+  static readonly description = "Data source management for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: list, get, createBlob, createOrUpdate, delete, test, generateSyncPlan.";
 
   static readonly operations: Record<string, OperationDefinition> = {
     list: {

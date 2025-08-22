@@ -459,7 +459,8 @@ export class AzureSearchClient {
       params.append("$select", "*");
     }
     const query = params.toString();
-    return this.request(`/agents${query ? `?${query}` : ""}`);
+    const result = await this.request(`/agents${query ? `?${query}` : ""}`) as { value?: unknown[] };
+    return result.value || [];
   }
 
   async getKnowledgeAgent(agentName: string): Promise<unknown> {
@@ -504,7 +505,8 @@ export class AzureSearchClient {
       params.append("$select", "*");
     }
     const query = params.toString();
-    return this.request(`/knowledgesources${query ? `?${query}` : ""}`);
+    const result = await this.request(`/knowledgesources${query ? `?${query}` : ""}`) as { value?: unknown[] };
+    return result.value || [];
   }
 
   async getKnowledgeSource(sourceName: string): Promise<unknown> {

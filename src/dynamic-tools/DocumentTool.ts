@@ -12,7 +12,7 @@ import {
 
 export class DocumentTool extends DynamicTool {
   static readonly toolName = "DocumentOperations";
-  static readonly description = "Comprehensive document management for Azure Search. Search, retrieve, upload, update, and delete documents.";
+  static readonly description = "Document operations tool for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: search, get, count, upload, merge, mergeOrUpload, delete, sample.";
 
   static readonly operations: Record<string, OperationDefinition> = {
     search: {

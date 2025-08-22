@@ -5,7 +5,7 @@ import type { ToolContext } from "../types";
 
 export class SkillsetTool extends DynamicTool {
   static readonly toolName = "SkillsetManagement";
-  static readonly description = "Manage Azure Search skillsets for AI enrichment pipelines during indexing.";
+  static readonly description = "Skillset management for Azure Search. USAGE: Call with {'operation': '<op>', 'params': {...}}. Operations: list, get, create, createOrUpdate, delete, validate.";
 
   static readonly operations: Record<string, OperationDefinition> = {
     list: {
