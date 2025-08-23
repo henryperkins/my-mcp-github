@@ -7,7 +7,7 @@ export function registerPrompts(server: McpServer, context: ToolContext) {
   // Create Search Index Prompt
   server.prompt(
     "create_search_index",
-    "Create a new search index with guided setup for your use case",
+    "Create a search index quickly with the right template",
     {
       use_case: z.string().describe("Type of search: ecommerce, documents, knowledge, hybrid, or custom"),
       index_name: z.string().describe("Name for the index (lowercase, hyphens allowed)"),
@@ -29,83 +29,58 @@ export function registerPrompts(server: McpServer, context: ToolContext) {
       switch (use_case?.toLowerCase()) {
         case "ecommerce":
         case "e-commerce":
-          instructions = `Create a product catalog search index with:
-1. Use the 'productCatalog' template via IndexManagement.create operation
-2. Include fields for: product name, description, category, price, rating, availability
-3. Enable faceting on category, price ranges, and ratings
-4. Set up scoring profiles to boost popular/featured products
-5. ${language ? `Configure ${language} language analyzers for text fields` : 'Use standard analyzers'}
-Use tool 'IndexManagement' with arguments:\n{
+          instructions = `Template: productCatalog. Facet category/price/rating. ${language ? `Language: ${language}. ` : ""}Example:
+{
   "operation": "create",
-  "params": { "indexName": "${index_name}", "template": "productCatalog"${language ? `, "language": "${language}"` : ''} }
+  "params": { "indexName": "${index_name}", "template": "productCatalog"${language ? `, "language": "${language}"` : ""} }
 }`;
           break;
 
         case "documents":
         case "document":
-          instructions = `Create a document search index with:
-1. Use the 'documentSearch' template via IndexManagement.create operation
-2. Include fields for: title, content, author, date, tags, file type
-3. Enable highlighting and hit highlighting
-4. ${language ? `Configure ${language} language analyzers` : 'Use standard text analyzers'}
-5. Consider adding semantic search configuration for better relevance
-Use tool 'IndexManagement' with arguments:\n{
+          instructions = `Template: documentSearch. Fields: title, content, tags. ${language ? `Language: ${language}. ` : ""}Example:
+{
   "operation": "create",
-  "params": { "indexName": "${index_name}", "template": "documentSearch"${language ? `, "language": "${language}"` : ''} }
+  "params": { "indexName": "${index_name}", "template": "documentSearch"${language ? `, "language": "${language}"` : ""} }
 }`;
           break;
 
         case "knowledge":
         case "knowledgebase":
         case "faq":
-          instructions = `Create a knowledge base search index with:
-1. Use the 'knowledgeBase' template via IndexManagement.create operation
-2. Include fields for: question, answer, category, tags, helpful_count
-3. Enable semantic search for natural language queries
-4. ${language ? `Configure ${language} language analyzers` : 'Use standard analyzers'}
-5. Set up synonym maps for common terminology
-Use tool 'IndexManagement' with arguments:\n{
+          instructions = `Template: knowledgeBase. Enable semantic. ${language ? `Language: ${language}. ` : ""}Example:
+{
   "operation": "create",
-  "params": { "indexName": "${index_name}", "template": "knowledgeBase"${language ? `, "language": "${language}"` : ''} }
+  "params": { "indexName": "${index_name}", "template": "knowledgeBase"${language ? `, "language": "${language}"` : ""} }
 }`;
           break;
 
         case "hybrid":
         case "hybrid-search":
         case "vector":
-          instructions = `Create a hybrid search index with:
-1. Use the 'hybridSearch' template via IndexManagement.create operation
-2. Combines traditional keyword search with vector search
-3. Include fields for: content (text), content_vector (embeddings)
-4. Vector dimensions: specify based on your embedding model (default 1536 for OpenAI)
-5. ${language ? `Configure ${language} language analyzers for text fields` : 'Use standard analyzers'}
-Use tool 'IndexManagement' with arguments:\n{
+          instructions = `Template: hybridSearch. Add content_vector (~1536 dims). ${language ? `Language: ${language}. ` : ""}Example:
+{
   "operation": "create",
-  "params": { "indexName": "${index_name}", "template": "hybridSearch"${language ? `, "language": "${language}"` : ''}, "vectorDimensions": 1536 }
+  "params": { "indexName": "${index_name}", "template": "hybridSearch"${language ? `, "language": "${language}"` : ""}, "vectorDimensions": 1536 }
 }`;
           break;
 
         case "custom":
-          instructions = `For a custom index, I'll help you define the schema. Please provide:
-1. What types of data will you be searching?
-2. What fields do you need (name, type, searchable/filterable/sortable)?
-3. Do you need vector search capabilities?
-4. Any specific analyzers or scoring requirements?
-
-Once you provide these details, I'll create the index using IndexManagement.create with a custom definition.`;
+          instructions = `Custom index: provide briefly
+- Fields (name, type, searchable/filterable/sortable)
+- Need vectors? (dims)
+- Analyzers/scoring
+Then call IndexManagement.create with a custom indexDefinition.`;
           break;
 
         default:
-          instructions = `To create an index for "${use_case}", I need more information:
-1. What kind of data will be stored?
-2. What search capabilities do you need?
-3. Should I use a template or create a custom schema?
-
-Available templates:
-- documentSearch: For articles, blogs, documents
-- productCatalog: For e-commerce products  
-- hybridSearch: For combined text and vector search
-- knowledgeBase: For FAQ, Q&A, support docs`;
+          instructions = `Choose a template:
+- documentSearch: Articles/docs
+- productCatalog: E‑commerce
+- hybridSearch: Text + vectors
+- knowledgeBase: Q&A/FAQ
+Or say "custom". Example:
+{ "operation":"create", "params":{ "indexName":"${index_name}", "template":"documentSearch" } }`;
       }
 
       messages.push({
@@ -123,7 +98,7 @@ Available templates:
   // Build Search Query Prompt
   server.prompt(
     "build_search_query",
-    "Build an advanced search query with filters, facets, and sorting",
+    "Build a search call with optional filters/sort",
     {
       index_name: z.string().describe("Name of the index to search"),
       search_intent: z.string().describe("What are you looking for?"),
@@ -164,11 +139,23 @@ Available templates:
       queryBuilder += `- select: ['field1', 'field2'] (specific fields to return)\n`;
       queryBuilder += `- includeTotalCount: true (get total matching documents)\n`;
 
+      // Build concise guidance
+      const conciseParts: string[] = [
+        `Call DocumentOperations.search:`,
+        `{`,
+        `  "operation":"search",`,
+        `  "params": { "indexName":"${index_name}", "search":"${search_intent}" }`,
+        `}`
+      ];
+      if (filters) conciseParts.push(`Filter (OData): e.g. price ge 10 and price le 100`);
+      if (sort_by) conciseParts.push(`Sort: orderBy: '${sort_by} desc' (or asc)`);
+      conciseParts.push(`Pagination: pageSize, cursor. Use select to limit fields. Optional: includeTotalCount.`);
+      const conciseBuilder = conciseParts.join("\\n");
       messages.push({
         role: "assistant" as const,
         content: {
           type: "text" as const,
-          text: queryBuilder
+          text: conciseBuilder
         }
       });
 
@@ -179,7 +166,7 @@ Available templates:
   // Setup Indexer Pipeline Prompt
   server.prompt(
     "setup_indexer_pipeline",
-    "Set up automated data ingestion from various sources",
+    "Create an ingestion pipeline (source → index)",
     {
       source_type: z.string().describe("Data source type: blob, cosmos, sql, or table"),
       target_index: z.string().describe("Destination index name"),
@@ -260,6 +247,39 @@ Available templates:
       pipelineSteps += `- Use IndexerManagement.status to monitor progress\n`;
       pipelineSteps += `- Check for errors and warnings in execution history\n`;
 
+      // Override with concise pipeline steps
+      {
+        const lines: string[] = [];
+        lines.push(`Pipeline for ${source_type} → ${target_index}:`);
+        lines.push(`1) Verify index: IndexManagement.get { indexName: "${target_index}" }`);
+        let ds = `2) Create data source: `;
+        switch ((source_type || "").toLowerCase()) {
+          case "blob":
+          case "storage":
+            ds += `DataSourceManagement.createBlob { connectionString, container, [path/ext] }`;
+            break;
+          case "cosmos":
+          case "cosmosdb":
+            ds += `DataSourceManagement.createOrUpdate { type:"cosmosdb", connStr, db, collection, [query] }`;
+            break;
+          case "sql":
+            ds += `DataSourceManagement.createOrUpdate { type:"azuresql", connStr, table/view }`;
+            break;
+          case "table":
+            ds += `DataSourceManagement.createOrUpdate { type:"azuretable", connStr, table }`;
+            break;
+          default:
+            ds += `DataSourceManagement.createOrUpdate { type, connection, container/table }`;
+        }
+        lines.push(ds);
+        if (ai_enrichment) {
+          lines.push(`3) Optional AI enrichment: SkillsetManagement.create (lang, sentiment, entities)`);
+        }
+        const stepIdx = ai_enrichment ? 4 : 3;
+        lines.push(`${stepIdx}) Create indexer: IndexerManagement.create { dataSource, index${ai_enrichment ? ", skillset" : ""}${schedule ? `, schedule:"${schedule}"` : ""} }`);
+        lines.push(`${stepIdx + 1}) Run & monitor: IndexerManagement.run/status`);
+        pipelineSteps = lines.join("\\n");
+      }
       messages.push({
         role: "assistant" as const,
         content: {
@@ -275,7 +295,7 @@ Available templates:
   // Index Health Check Prompt
   server.prompt(
     "index_health_check",
-    "Analyze index performance and get optimization recommendations",
+    "Quick index health check and tips",
     {
       index_name: z.string().describe("Index to analyze"),
       check_indexers: z.string().optional().describe("Also check associated indexers? (yes/no)")
@@ -327,6 +347,19 @@ Available templates:
       healthCheck += `- If indexing slow: Adjust batch size and parallelism\n`;
       healthCheck += `- Regular maintenance: Reset indexers periodically for full refresh\n`;
 
+      // Concise summary override
+      {
+        const lines: string[] = [];
+        lines.push(`Health check for "${index_name}":`);
+        lines.push(`1) IndexManagement.stats → docCount, storage (watch zero or spikes)`);
+        lines.push(`2) IndexManagement.get → field flags, analyzers, scoring, suggesters`);
+        lines.push(`3) DocumentOperations.search → quick keyword and filtered test; note latency/quality`);
+        if (check_indexers === 'yes') {
+          lines.push(`4) IndexerManagement.status → failures, warnings, last run, success rate`);
+        }
+        lines.push(`Tips: tune analyzers/synonyms; prefilter; batch uploads; watch storage; adjust scoring.`);
+        healthCheck = lines.join("\\n");
+      }
       messages.push({
         role: "assistant" as const,
         content: {
@@ -342,7 +375,7 @@ Available templates:
   // Migrate Index Safely Prompt
   server.prompt(
     "migrate_index_safely",
-    "Safely migrate or update index schema with zero downtime",
+    "Migrate index schema with zero downtime",
     {
       source_index: z.string().describe("Current index name"),
       changes: z.string().describe("What changes are needed?"),

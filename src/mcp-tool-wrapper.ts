@@ -78,8 +78,8 @@ export function createToolWrapper(toolName: string, env: any) {
       elicitInput: async (params: { message: string; requestedSchema: any }) => {
         console.warn(`[Elicitation Required] ${params.message}`);
         console.warn('Elicitation is not available in direct tool invocation mode.');
-        // Return a safe "continue" action to avoid breaking the flow
-        return { action: 'continue', content: null };
+        // Return a spec-compliant MCP ElicitResult action
+        return { action: 'cancel' as const };
       }
     } as any
   };

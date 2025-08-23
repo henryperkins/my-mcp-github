@@ -7,7 +7,7 @@ export function registerAdvancedPrompts(server: McpServer, context: ToolContext)
   // Create AI Enrichment Skillset Prompt
   server.prompt(
     "create_ai_enrichment_skillset",
-    "Create an AI enrichment skillset with cognitive skills for text and image analysis",
+    "Create AI enrichment skillset",
     {
       skillset_name: z.string().describe("Name for the skillset (unique within the service)"),
       enrichment_type: z.string().describe("Type of enrichment: text_analytics, image_analysis, custom_skills, or combined"),
@@ -25,6 +25,18 @@ export function registerAdvancedPrompts(server: McpServer, context: ToolContext)
           text: `Create ${enrichment_type} enrichment skillset "${skillset_name}" for field "${source_field}"`
         }
       });
+      {
+        const concise = [
+          `Skillset: ${skillset_name} (${enrichment_type}) on '${source_field}'${language ? ` (lang: ${language})` : ''}`,
+          `Steps: 1) Configure Cognitive Services  2) SkillsetManagement.create { name, skills, cognitiveServices }`,
+          `3) Attach to indexer  4) Test & monitor`,
+          `Tips: start minimal (entities/keyphrases); add OCR/image only if needed.`
+        ].join("\\n");
+        messages[messages.length - 1] = {
+          role: "assistant" as const,
+          content: { type: "text" as const, text: concise }
+        };
+      }
 
       const plan: string[] = [];
       plan.push(`**AI Enrichment Skillset Creation Plan**\n`);
@@ -112,7 +124,7 @@ export function registerAdvancedPrompts(server: McpServer, context: ToolContext)
   // Build Custom Skill Pipeline Prompt
   server.prompt(
     "build_custom_skill_pipeline",
-    "Build a custom skill pipeline with Azure Functions or Web APIs",
+    "Build custom skill pipeline",
     {
       skill_name: z.string().describe("Name for the custom skill"),
       skill_type: z.string().describe("Type: azure_function, web_api, or azure_ml"),
@@ -212,6 +224,19 @@ export function registerAdvancedPrompts(server: McpServer, context: ToolContext)
           text: guide
         }
       });
+      {
+        const concise = [
+          `Custom skill: ${skill_name} (${skill_type})${endpoint_url ? `, endpoint: ${endpoint_url}` : ''}`,
+          `Inputs: ${inputs.join(', ')}, Outputs: ${outputs.join(', ')}`,
+          `Steps: 1) Implement endpoint  2) SkillsetManagement.create WebApiSkill { name, uri, inputs, outputs }`,
+          `3) Test single record  4) Monitor`,
+          `Tips: support batch, retries/timeouts, partial results, log by recordId`
+        ].join("\\n");
+        messages[messages.length - 1] = {
+          role: "assistant" as const,
+          content: { type: "text" as const, text: concise }
+        };
+      }
 
       return { messages };
     }
@@ -220,7 +245,7 @@ export function registerAdvancedPrompts(server: McpServer, context: ToolContext)
   // Setup Vector Search Prompt
   server.prompt(
     "setup_vector_search",
-    "Set up hybrid search with vector embeddings and semantic ranking",
+    "Set up vector search",
     {
       index_name: z.string().describe("Index name for vector search"),
       embedding_model: z.string().describe("Embedding model: openai, azure_openai, or custom"),
@@ -323,6 +348,21 @@ export function registerAdvancedPrompts(server: McpServer, context: ToolContext)
           text: setup
         }
       });
+      {
+        const concise = [
+          `Vector search for "${index_name}" — model: ${embedding_model}, dims: ${vector_dimensions}, algo: ${algorithm}`,
+          `Steps: 1) IndexManagement.create { template:"hybridSearch", indexName:"${index_name}", vectorDimensions:${vector_dimensions} }`,
+          `2) Generate embeddings (${embedding_model}); normalize & match dims`,
+          `3) DocumentOperations.upload { content, content_vector } (batch)`,
+          `4) DocumentOperations.search { search:\"...\", vectors:[{ value:[embedding], fields:\"content_vector\", k:10 }]`,
+          `Optional: IndexManagement.update semantic config (title/content/keywords)`,
+          `Tips: prefilter with keywords; smaller k for speed; monitor vector index size`
+        ].join("\\n");
+        messages[messages.length - 1] = {
+          role: "assistant" as const,
+          content: { type: "text" as const, text: concise }
+        };
+      }
 
       return { messages };
     }
@@ -331,7 +371,7 @@ export function registerAdvancedPrompts(server: McpServer, context: ToolContext)
   // Troubleshoot Enrichment Errors Prompt
   server.prompt(
     "troubleshoot_enrichment_errors",
-    "Diagnose and fix common enrichment pipeline errors",
+    "Troubleshoot enrichment errors",
     {
       indexer_name: z.string().describe("Name of the indexer with errors"),
       error_type: z.string().optional().describe("Specific error: skill_error, mapping_error, timeout, or quota")
@@ -445,6 +485,29 @@ export function registerAdvancedPrompts(server: McpServer, context: ToolContext)
           text: troubleshooting
         }
       });
+      {
+        const conciseParts: string[] = [];
+        conciseParts.push(`Troubleshoot indexer "${indexer_name}"${error_type ? ` (${error_type})` : ''}`);
+        conciseParts.push(`1) IndexerManagement.status (history ~10) → errors/warnings, failed docs, skill details`);
+        if (!error_type || error_type === 'skill_error') {
+          conciseParts.push(`Skill errors: check null/missing inputs; increase timeouts; reduce batch; verify params/API versions; watch quotas`);
+        }
+        if (!error_type || error_type === 'mapping_error') {
+          conciseParts.push(`Mapping: fix type mismatches; correct field paths; handle arrays (/*/field); flatten if needed`);
+        }
+        if (!error_type || error_type === 'timeout') {
+          conciseParts.push(`Timeouts: increase indexer maxRunTime/skill timeouts; optimize processing; reduce batch size; check network`);
+        }
+        if (!error_type || error_type === 'quota') {
+          conciseParts.push(`Quota: monitor usage; upgrade tier; throttle requests; optimize storage/doc sizes`);
+        }
+        conciseParts.push(`Actions: reset+run; reprocess failed docs; update skillset; monitor next run`);
+        const conciseTroubleshooting = conciseParts.join("\\n");
+        messages[messages.length - 1] = {
+          role: "assistant" as const,
+          content: { type: "text" as const, text: conciseTroubleshooting }
+        };
+      }
 
       return { messages };
     }

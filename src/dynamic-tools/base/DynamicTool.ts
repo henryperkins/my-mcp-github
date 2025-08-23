@@ -178,6 +178,7 @@ export abstract class DynamicTool {
     }
 
     // Register the main tool
+    // Build MCP ToolAnnotations (spec-compliant)
     const annotations = (() => {
       const ops = Object.values(this.operations);
       const allRead = ops.every(o => o.category === 'read');
@@ -187,21 +188,41 @@ export abstract class DynamicTool {
         destructiveHint: hasDelete,
         idempotentHint: allRead,
         openWorldHint: true,
-        title: this.description,
-        // Provide non-standard hints and examples to guide LLMs/clients
-        hints,
-        examples
+        // Only include fields defined by the MCP ToolAnnotations spec
+        // Additional guidance (hints/examples) should be provided via docs or prompt metadata.
+        title: this.description
       };
     })();
-    // Use the Zod raw shape (not a ZodObject) for params schema
-    const paramsShape = (paramSchema as z.ZodObject<any>).shape as any;
-    
-    // Use registerTool API which properly supports annotations
+    // Build MCP-compliant inputSchema (type: object)
+    const inputSchema = {
+      type: "object" as const,
+      properties: {
+        operation: {
+          type: "string" as const,
+          enum: Object.keys(this.operations),
+          description: `Operation to perform:\n${operationDescriptions}`
+        },
+        params: {
+          type: "object" as const,
+          description: "Operation-specific parameters"
+        },
+        options: {
+          type: "object" as const,
+          properties: {
+            timeout: { type: "number" as const, description: "Custom timeout in milliseconds" },
+            skipValidation: { type: "boolean" as const, description: "Skip parameter validation" },
+            dryRun: { type: "boolean" as const, description: "Validate without executing" }
+          }
+        }
+      },
+      required: ["operation"]
+    };
+    // Register tool with spec-compliant schema and annotations
     server.registerTool(
       this.toolName,
       {
         description: this.description,
-        inputSchema: paramsShape,
+        inputSchema,
         annotations: annotations
       },
       async (input: any) => {

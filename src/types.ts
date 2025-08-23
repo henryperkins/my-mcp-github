@@ -25,7 +25,7 @@ export interface ElicitationCapable {
   elicitInput?: (params: {
     message: string;
     requestedSchema: any;
-  }) => Promise<{ action: string; content?: any }>;
+  }) => Promise<{ action: "accept" | "decline" | "cancel"; content?: any }>;
 }
 
 export interface ToolContext {
