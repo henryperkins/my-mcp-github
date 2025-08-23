@@ -1,6 +1,7 @@
 // src/resources.ts
 import { withTimeout } from "./utils/timeout";
 import { DEFAULT_TIMEOUT_MS } from "./constants";
+import { z } from "zod";
 
 /**
  * MCP Resource annotations for better client integration
@@ -844,6 +845,7 @@ export function registerResources(server: any, getClient: () => any) {
   server.resourceTemplate?.(
     "search/{indexName}/{query}",
     "Live search results from an index",
+    z.object({ indexName: z.string(), query: z.string().optional() }),
     async ({ indexName, query }: any) => {
       try {
         const c = getClient();
@@ -937,6 +939,18 @@ export function registerResources(server: any, getClient: () => any) {
 server.resourceTemplate?.(
   "indexes/{indexName}/search",
   "Live search within an index (supports q, top, select, filter, queryType, semanticConfiguration, vectorText, vectorK, vectorFields)",
+  z.object({
+    indexName: z.string(),
+    q: z.string().optional(),
+    top: z.union([z.string(), z.number()]).optional(),
+    select: z.string().optional(),
+    filter: z.string().optional(),
+    queryType: z.string().optional(),
+    semanticConfiguration: z.string().optional(),
+    vectorText: z.string().optional(),
+    vectorK: z.union([z.string(), z.number()]).optional(),
+    vectorFields: z.string().optional()
+  }),
   async (params: any) => {
     try {
       const c = getClient();
@@ -1016,6 +1030,7 @@ server.resourceTemplate?.(
 server.resourceTemplate?.(
   "indexes/{indexName}/fields/{fieldName}",
   "Inspect an index field definition and capabilities",
+  z.object({ indexName: z.string(), fieldName: z.string() }),
   async ({ indexName, fieldName }: any) => {
     try {
       const c = getClient();
@@ -1092,6 +1107,7 @@ server.resourceTemplate?.(
 server.resourceTemplate?.(
   "skillsets/{name}/skills/{skillName}",
   "Inspect a specific skill configuration in a skillset",
+  z.object({ name: z.string(), skillName: z.string() }),
   async ({ name, skillName }: any) => {
     try {
       const c = getClient();
